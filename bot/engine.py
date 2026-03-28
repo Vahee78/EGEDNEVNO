@@ -53,7 +53,7 @@ def remove_user_xp(user: dict, amount: int):
 
 
 def check_and_reset_streak(user: dict) -> bool:
-    """Проверяет, не сгорел ли стрик. Возвращает True, если сброшен."""
+    """Проверяет, не сгорел ли стрик. Возвращает количество штрафных XP, если стрик сброшен."""
     if not user.get("last_solved_date"): return False
 
     today = datetime.now().date()
@@ -64,9 +64,10 @@ def check_and_reset_streak(user: dict) -> bool:
 
     diff = (today - last_solved).days
     if diff > 1:
+        penalty = max(1, get_max_xp(user["score"]) // 3)
         user["streak"] = 0
-        remove_user_xp(user, get_max_xp(user["score"]) // 3)  # Штраф за пропуск
-        return True
+        remove_user_xp(user, penalty)  # Штраф за пропуск
+        return pelnalty
     return False
 
 

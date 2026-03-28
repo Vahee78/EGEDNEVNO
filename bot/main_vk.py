@@ -1,16 +1,18 @@
+import time
+import threading
 import vk_api
 from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
 from vk_api.utils import get_random_id
 import json
 import re
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import config
 import database as db
 import data_content as content
 import engine
-from main import get_random_task
+from handlers.utils import get_random_task
 
 # Инициализация ВК
 vk_session = vk_api.VkApi(token=config.VK_TOKEN)
@@ -21,44 +23,28 @@ try:
 except Exception as e:
     print(f"❌ Ошибка подключения LongPoll: {e}")
 
-# Хранилище сессий (аналог FSM и active_sessions из TG)
+# Хранилище сессий
 active_sessions = {}
 
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ВК ---
 def get_vk_keyboard(buttons_rows, inline=False):
-    keyboard = {
-        "one_time": False,
-        "inline": inline,
-        "buttons": []
-    }
+    keyboard = {"one_time": False, "inline": inline, "buttons": []}
     for row in buttons_rows:
         vk_row = []
         for btn in row:
-            # Превращаем callback_data в payload для ВК
             action = {"type": "text", "label": btn['text']}
             if 'payload' in btn:
                 action = {"type": "callback", "label": btn['text'], "payload": json.dumps(btn['payload'])}
-
-            vk_row.append({
-                "action": action,
-                "color": btn.get('color', 'primary')
-            })
+            vk_row.append({"action": action, "color": btn.get('color', 'primary')})
         keyboard["buttons"].append(vk_row)
     return json.dumps(keyboard, ensure_ascii=False)
 
 
 def send_msg(user_id, text, keyboard=None, template=None):
-    params = {
-        "user_id": user_id,
-        "message": text,
-        "random_id": get_random_id(),
-    }
-    if keyboard:
-        params["keyboard"] = keyboard
-    if template:
-        params["template"] = template
-
+    params = {"user_id": user_id, "message": text, "random_id": get_random_id()}
+    if keyboard: params["keyboard"] = keyboard
+    if template: params["template"] = template
     try:
         vk.messages.send(**params)
     except Exception as e:
@@ -66,18 +52,14 @@ def send_msg(user_id, text, keyboard=None, template=None):
 
 
 def ask_gemini_sync(prompt: str) -> str:
-    """Синхронная версия запроса к Gemini (для ВК LongPoll)"""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{config.GEMINI_MODEL_NAME}:generateContent?key={config.GEMINI_API_KEY}"
     try:
-        resp = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=10)
-        if resp.status_code != 200: return "⚠️ Ошибка API."
+        resp = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=15)
+        if resp.status_code != 200: return "⚠️ Ошибка API Gemini."
         data = resp.json()
-        candidates = data.get("candidates", [])
-        if not candidates: return "⚠️ ИИ не смог сгенерировать ответ."
-        return candidates[0]["content"]["parts"][0]["text"]
+        return data["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as e:
-        print(f"Ошибка Gemini: {e}")
-        return "⚠️ Не удалось связаться с ИИ."
+        return f"⚠️ Ошибка ИИ: {e}"
 
 
 def handle_streak_check_vk(user_id: int) -> bool:
@@ -95,7 +77,6 @@ def get_menu_text_vk(user_id: int) -> str:
     """Формирование текста статистики (аналог из TG)"""
     was_reset = handle_streak_check_vk(user_id)
     user = db.get_user_data(user_id, platform="vk")
-
     league = content.get_league(user["score"])
     today_str = datetime.now().strftime("%Y-%m-%d")
     status = "✅ Решено" if user['last_solved_date'] == today_str else "❌ Не решено"
@@ -127,7 +108,7 @@ settings_kb = get_vk_keyboard([
 
 # --- ОСНОВНОЙ ЦИКЛ ---
 def main_loop():
-    print("🚀 Бот ВК запущен...")
+    print("🚀 Бот ВК запущен...\n")
 
     for event in longpoll.listen():
         if event.type == VkBotEventType.MESSAGE_NEW:
@@ -136,28 +117,35 @@ def main_loop():
             text = msg['text'].strip()
             text_l = text.lower()
 
+            # Инициализация пользователя и сессии
             user = db.get_user_data(user_id, platform="vk")
-            session = active_sessions.get(user_id, {"state": "menu"})
+            if user_id not in active_sessions:
+                active_sessions[user_id] = {"state": "menu"}
 
-            # Логика команд "Назад" / "Меню"
+            session = active_sessions[user_id]
+            state = session.get("state")
+
+            # Глобальные команды
             if text_l in ["🏠 меню", "начать", "старт", "/start"]:
                 active_sessions[user_id] = {"state": "menu"}
                 send_msg(user_id, "Главное меню:", main_menu_kb)
                 continue
 
-            # --- СОСТОЯНИЯ (Аналог FSM) ---
-            state = session.get("state")
+            # --- ОБРАБОТКА СОСТОЯНИЙ ---
 
             if state == "solving":
-                # Обработка ответа на задачу
-                q = session.get("task_data")
-                # Упрощенная логика ответа для ВК (текстом)
-                user_answer = "".join(filter(str.isdigit, text))
+                # 1. Исправляем ошибку filter (используем лямбду)
+                user_answer = "".join(filter(lambda c: c.isdigit(), text))
+
                 if not user_answer:
-                    send_msg(user_id, "Пожалуйста, введи цифры ответа (например: 13).")
+                    send_msg(user_id, "Пожалуйста, введи только цифры ответа.")
                     continue
 
-                correct_indices = sorted([i + 1 for i in q["correct_indexes"]])
+                # 2. Исправляем q["correct_indexes"] (используем .get() для безопасности)
+                q = session.get("task_data", {})
+                correct_idxs = q.get("correct_indexes", [])
+
+                correct_indices = sorted([int(i) + 1 for i in correct_idxs])
                 correct_str = "".join(map(str, correct_indices))
                 user_sorted = "".join(sorted(list(set(user_answer))))
 
@@ -170,11 +158,11 @@ def main_loop():
                         user["streak"] += 1
                         user["last_solved_date"] = today_str
                     engine.add_user_xp(user, 1)
-                    res_text = f"✅ Верно!\n\nXP: {user['xp']} | Балл: {user['score']}"
+                    res_text = f"✅ Верно!\nXP: {user['xp']} | Балл: {user['score']}"
                 else:
                     engine.remove_user_xp(user, 1)
                     user["streak"] = 0
-                    res_text = f"❌ Ошибка. Правильный ответ: {correct_str}\nШтраф: -1 XP."
+                    res_text = f"❌ Ошибка. Правильный ответ: {correct_str}\n-1 XP."
 
                 db.update_user_data(user_id, user, platform="vk")
 
@@ -190,15 +178,10 @@ def main_loop():
                 active_sessions[user_id]["state"] = "after_solve"
                 continue
 
-            elif state == "ai":
-                send_msg(user_id, "⏳ ИИ анализирует ваш вопрос...")
-                ans = ask_gemini_sync(text)
-                send_msg(user_id, f"🤖 Ответ ИИ:\n\n{ans}", get_vk_keyboard([[{"text": "🏠 Меню"}]]))
-                continue
-
             elif state == "set_target":
-                try:
-                    val = int(re.search(r'\d+', text).group())
+                match = re.search(r'\d+', text)
+                if match:
+                    val = int(match.group())
                     if 0 <= val <= 100:
                         user["target"] = val
                         db.update_user_data(user_id, user, platform="vk")
@@ -206,7 +189,7 @@ def main_loop():
                         active_sessions[user_id] = {"state": "menu"}
                     else:
                         send_msg(user_id, "Введите число от 0 до 100.")
-                except:
+                else:
                     send_msg(user_id, "Пожалуйста, введите число.")
                 continue
 
@@ -229,16 +212,22 @@ def main_loop():
                 send_msg(user_id, get_menu_text_vk(user_id), main_menu_kb)
 
             elif text_l == "📝 решать":
-                handle_streak_check_vk(user_id)
+                was_reset = handle_streak_check_vk(user_id)
+                reset_msg = f"⚠️ Ваш стрик сгорел! -{was_reset} XP\n\n" if was_reset else ""
                 q = get_random_task()
                 if q:
                     active_sessions[user_id] = {"state": "solving", "task_data": q}
                     opts = "\n".join([f"{i + 1}. {opt}" for i, opt in enumerate(q['options'])])
                     msg_text = f"📝 Задание №{q['type']}\n\n{q['instruction']}\n\n{opts}\n\n👉 Введи цифры ответа:"
-                    send_msg(user_id, msg_text, get_vk_keyboard([[{"text": "🏠 Меню", "color": "negative"}]]))
+                    msg_text = reset_msg + msg_text
 
-            elif text_l == "✨ объяснить ошибку" and session.get("state") == "after_solve":
-                q = session.get("task_data")
+                    send_msg(user_id, msg_text, get_vk_keyboard([[{"text": "🏠 Меню", "color": "negative"}]]))
+                else:
+                    send_msg(user_id, "Задания не найдены.",
+                             get_vk_keyboard([[{"text": "🏠 Меню", "color": "negative"}]]))
+
+            elif text_l == "✨ объяснить ошибку" and state == "after_solve":
+                q = session.get("task_data", {})
                 send_msg(user_id, "⏳ ИИ готовит разбор...")
                 prompt = f"Разбери задание: {q['instruction']}\nВарианты: {q['options']}\nОтветы: {q['correct_indexes']}\nОбъясни кратко."
                 explanation = ask_gemini_sync(prompt)
@@ -258,6 +247,63 @@ def main_loop():
                          get_vk_keyboard([[{"text": "🏠 Меню"}]]))
 
 
+# Инициализация сессии для уведомлений (отдельно от основного цикла)
+vk_notify_session = vk_api.VkApi(token=config.VK_TOKEN)
+vk_notify = vk_notify_session.get_api()
+
+
+def send_notification_msg(user_id, text):
+    """Отдельная функция отправки для потока уведомлений"""
+    try:
+        vk_notify.messages.send(
+            user_id=user_id,
+            message=text,
+            random_id=get_random_id()
+        )
+    except Exception as e:
+        print(f"❌ Ошибка отправки уведомления ВК ({user_id}): {e}")
+
+
+def notification_thread_func():
+    """Функция, которая будет крутиться в фоновом потоке"""
+    print("🔔 Поток уведомлений ВК запущен...\n")
+    while True:
+        try:
+            now_utc = datetime.now(timezone.utc)
+            # Получаем всех пользователей, которым нужны уведомления
+            # Убедись, что в базе данных у ВК пользователей стоит platform='vk'
+            users = db.get_all_users_for_notify()
+            today_str = datetime.now().strftime("%Y-%m-%d")
+
+            for u_id, pl, tz, last_date in users:
+                if pl != 'vk':
+                    continue  # Игнорируем ТГ пользователей в этом потоке
+
+                if last_date == today_str:
+                    continue  # Пользователь сегодня уже решал
+
+                # Вычисляем локальное время пользователя
+                l_time = now_utc + timedelta(hours=(tz or 0))
+
+                # Проверяем, совпадает ли текущий час с часами из конфига (например, 10, 14, 18)
+                # content.NOTIFICATION_HOURS — это список [10, 14, 18] или аналогичный
+                if any(l_time.hour == int(h) and abs(l_time.minute - (30 if h % 1 != 0 else 0)) < 5 for h in
+                       content.NOTIFICATION_HOURS):
+                    notify_text = content.get_notification(l_time)
+                    send_notification_msg(u_id, notify_text)
+                    time.sleep(0.5)  # Небольшая пауза, чтобы не спамить в API ВК
+
+        except Exception as e:
+            print(f"⚠️ Ошибка в потоке уведомлений: {e}")
+
+        # Проверяем раз в 10 минут (600 секунд)
+        time.sleep(600)
+
+
 if __name__ == "__main__":
     db.init_db()
+
+    notify_thread = threading.Thread(target=notification_thread_func, daemon=True)
+    notify_thread.start()
+
     main_loop()

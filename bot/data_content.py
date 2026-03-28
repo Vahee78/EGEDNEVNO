@@ -37,7 +37,7 @@ def get_notification(time):
     return f"🔔 {notification}"
 
 
-NOTIFICATION_HOURS = [9, 12, 15, 17, 19, 20, 21, 22, 22.5, 23, 23.5]
+NOTIFICATION_HOURS = [9, 12, 15, 18, 20, 22, 22.5, 23, 23.5]
 
 
 DUO_QUOTES = {

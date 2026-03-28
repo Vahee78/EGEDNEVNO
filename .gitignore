@@ -298,3 +298,4 @@ bot/config.py
 bot/users.db
 .idea/
 bot/tasks/
+bot/parser_bank_ege.py
