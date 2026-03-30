@@ -26,16 +26,15 @@ async def notification_loop():
             if last_date == today_str: continue
 
             l_time = now_utc + timedelta(hours=tz)
-            if any(l_time.hour == int(h) and abs(l_time.minute - (30 if h % 1 != 0 else 0)) < 5 for h in
+            if any(l_time.hour == int(h) and abs(l_time.minute - (30 if h % 1 != 0 else 0)) < 10 for h in
                    content.NOTIFICATION_HOURS):
                 try:
                     await bot.send_message(u_id, content.get_notification(l_time))
-                    print(f"Отправлено уведомление пользователю {u_id} в {l_time}")
                     await asyncio.sleep(0.05)  # Защита от спам-блока Telegram
                 except Exception as e:
                     print(f"Ошибка отправки уведомления {u_id}: {e}")
 
-        await asyncio.sleep(300)
+        await asyncio.sleep(600)
 
 
 async def main():

@@ -32,10 +32,10 @@ def get_random_task():
         return None
 
 
-def handle_streak_check(user_id: int) -> bool:
+def handle_streak_check(user_id: int) -> int:
     """Централизованная проверка стрика с защитой от бесконечного списания."""
     user = db.get_user_data(user_id)
-    was_reset = engine.check_and_reset_streak(user)
+    was_reset = engine.check_streak(user)
     if was_reset:
         yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
         user['last_solved_date'] = yesterday_str
@@ -54,7 +54,7 @@ def get_menu_text(user_id: int) -> str:
     max_xp = engine.get_max_xp(user["score"])
     streak_icon = engine.get_streak_icon(user["streak"])
 
-    reset_msg = "\n\n⚠️ *Ваш стрик сгорел!* -5 XP" if was_reset else ""
+    reset_msg = f"\n\n⚠️ *Ваш стрик сгорел!* -{was_reset} XP" if was_reset else ""
 
     return (
         f"📊 *Ваша статистика:*\n"

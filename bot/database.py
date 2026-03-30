@@ -23,7 +23,6 @@ def init_db():
             target INTEGER DEFAULT 80,
             timezone INTEGER,
             last_solved_date TEXT,
-            last_seen_date TEXT,
             PRIMARY KEY (user_id, platform)
         )
     ''')
@@ -57,8 +56,7 @@ def get_user_data(user_id, platform="tg"):
         "streak": 0,
         "target": 80,
         "timezone": None,
-        "last_solved_date": None,
-        "last_seen_date": None
+        "last_solved_date": None
     }
 
 
@@ -69,8 +67,8 @@ def update_user_data(user_id, data, platform="tg"):
 
     cursor.execute('''
         INSERT OR REPLACE INTO users 
-        (user_id, platform, username, full_name, score, xp, streak, target, timezone, last_solved_date, last_seen_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (user_id, platform, username, full_name, score, xp, streak, target, timezone, last_solved_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         user_id,
         platform,
@@ -82,7 +80,6 @@ def update_user_data(user_id, data, platform="tg"):
         data.get("target", 80),
         data.get("timezone"),
         data.get("last_solved_date"),
-        data.get("last_seen_date")
     ))
     conn.commit()
     conn.close()

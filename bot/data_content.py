@@ -27,7 +27,7 @@ def get_streak_congrats(streak: int):
 
 
 def get_notification(time):
-    hour = datetime.fromisoformat(time).hour
+    hour = time.hour
     if hour <= 12:
         notification = random.choice(DUO_QUOTES["standard"])
     elif hour <= 19:

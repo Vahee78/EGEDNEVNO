@@ -4,14 +4,12 @@ import data_content as content
 
 def get_max_xp(score: int) -> int:
     """Возвращает количество заданий (XP), нужных для получения следующего балла."""
-    if score < 40:
+    if score < 50:
         return 1
-    elif score < 50:
-        return 3
     elif score < 60:
-        return 5
+        return 3
     elif score < 70:
-        return 7
+        return 6
     elif score < 80:
         return 13
     elif score < 90:
@@ -52,7 +50,7 @@ def remove_user_xp(user: dict, amount: int):
         user["xp"] += get_max_xp(user["score"])
 
 
-def check_and_reset_streak(user: dict) -> bool:
+def check_streak(user: dict) -> int:
     """Проверяет, не сгорел ли стрик. Возвращает количество штрафных XP, если стрик сброшен."""
     if not user.get("last_solved_date"): return False
 
@@ -67,7 +65,7 @@ def check_and_reset_streak(user: dict) -> bool:
         penalty = max(1, get_max_xp(user["score"]) // 3)
         user["streak"] = 0
         remove_user_xp(user, penalty)  # Штраф за пропуск
-        return pelnalty
+        return penalty
     return False
 
 

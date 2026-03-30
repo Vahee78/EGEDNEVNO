@@ -18,7 +18,6 @@ async def cmd_start(message: Message):
     user = db.get_user_data(message.from_user.id)
     user["username"] = message.from_user.username
     user["full_name"] = message.from_user.full_name
-    user["last_seen_date"] = datetime.now().strftime("%Y-%m-%d")
     db.update_user_data(message.from_user.id, user)
 
     await message.answer(
