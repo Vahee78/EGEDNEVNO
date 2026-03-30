@@ -187,7 +187,6 @@ def main_loop():
                                 f"\n🆙 Новый балл: {user['score']}!" if user["score"] > old_score else "")
                         else:
                             engine.remove_user_xp(user, 1)
-                            user["streak"] = 0
                             res_text = f"❌ Ошибка.\n\n{options_text}\n" + (
                                 f"\n📉 Балл упал до {user['score']}." if user["score"] < old_score else "")
 

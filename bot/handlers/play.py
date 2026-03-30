@@ -123,7 +123,6 @@ async def submit_answer(callback: CallbackQuery):
             f"\n🆙 Новый балл: {db_data['score']}!" if db_data["score"] > old_score else "")
     else:
         engine.remove_user_xp(db_data, 1)
-        db_data["streak"] = 0
         res_text = f"❌ *Ошибка.*\n\n{options_text}\nШтраф: -1 XP." + (
             f"\n📉 Балл упал до {db_data['score']}." if db_data["score"] < old_score else "")
 
