@@ -148,48 +148,82 @@ def main_loop():
                     # --- ОБРАБОТКА СОСТОЯНИЙ ---
 
                     if state == "solving":
-                        # Очищаем ввод: оставляем только цифры
-                        user_digits = "".join(filter(lambda c: c.isdigit(), text))
-                        if not user_digits:
-                            send_msg(user_id, "Пожалуйста, введи цифры ответа (например: 13).")
-                            continue
-
                         q = session.get("task_data", {})
-                        # Индексы из ответа пользователя (уменьшаем на 1, т.к. в интерфейсе 1-5, а в базе 0-4)
-                        user_selected_indices = sorted(
-                            list(set([int(d) - 1 for d in user_digits if 0 < int(d) <= len(q['options'])])))
-                        correct_indices = sorted(q.get("correct_indexes", []))
 
-                        is_correct = user_selected_indices == correct_indices
-
-                        # Формируем текст разбора
+                        # Определяем тип задания
+                        is_text_task = "answer_variants" in q and len(q["answer_variants"]) > 0
+                        is_correct = False
                         options_text = ""
-                        for i, opt in enumerate(q['options']):
-                            marker = ""
-                            if i in correct_indices:
-                                marker = " ✅"
-                            elif i in user_selected_indices:
-                                marker = " ❌"
-
-                            style = "👉 " if i in user_selected_indices else "— "
-                            options_text += f"{style}{i + 1}. {opt}{marker}\n"
+                        res_text = ""
 
                         old_score = user["score"]
                         old_league = content.get_league(old_score)
                         today_str = datetime.now().strftime("%Y-%m-%d")
 
-                        if is_correct:
-                            if user["last_solved_date"] != today_str:
-                                user["streak"] += 1
-                                user["last_solved_date"] = today_str
-                            engine.add_user_xp(user, 1)
-                            res_text = f"✅ Верно!\n\n{options_text}\n" + (
-                                f"\n🆙 Новый балл: {user['score']}!" if user["score"] > old_score else "")
-                        else:
-                            engine.remove_user_xp(user, 1)
-                            res_text = f"❌ Ошибка.\n\n{options_text}\n" + (
-                                f"\n📉 Балл упал до {user['score']}." if user["score"] < old_score else "")
+                        if is_text_task:
+                            # Логика для заданий с текстовым ответом (5, 6, 7)
+                            user_ans = text.lower().strip().translate(str.maketrans('', '', '.,!?'))
+                            if not user_ans:
+                                send_msg(user_id, "Пожалуйста, напишите ответ текстом.")
+                                continue
 
+                            correct_variants = [v.lower().strip() for v in q["answer_variants"]]
+                            is_correct = user_ans in correct_variants
+
+                            correct_display = " / ".join(q["answer_variants"])
+
+                            # Начисляем/отнимаем очки для текстового задания
+                            if is_correct:
+                                if user["last_solved_date"] != today_str:
+                                    user["streak"] += 1
+                                    user["last_solved_date"] = today_str
+                                engine.add_user_xp(user, 1)
+                                res_text = f"✅ Верно!\nОтвет: {q['answer_variants'][0]}\n" + (
+                                    f"\n🆙 Новый балл: {user['score']}!" if user["score"] > old_score else "")
+                            else:
+                                engine.remove_user_xp(user, 1)
+                                user["streak"] = 0
+                                res_text = f"❌ Ошибка.\nВаш ответ: {user_ans}\nПравильный ответ: {correct_display}\nШтраф: -1 XP." + (
+                                    f"\n📉 Балл упал до {user['score']}." if user["score"] < old_score else "")
+
+                        else:
+                            # Логика для заданий с вариантами ответов (индексы)
+                            user_digits = "".join(filter(lambda c: c.isdigit(), text))
+                            if not user_digits:
+                                send_msg(user_id, "Пожалуйста, введи цифры ответа (например: 13).")
+                                continue
+
+                            user_selected_indices = sorted(
+                                list(set([int(d) - 1 for d in user_digits if 0 < int(d) <= len(q.get('options', []))])))
+                            correct_indices = sorted(q.get("correct_indexes", []))
+
+                            is_correct = user_selected_indices == correct_indices
+
+                            # Формируем текст разбора для цифровых вариантов
+                            for i, opt in enumerate(q.get('options', [])):
+                                marker = ""
+                                if i in correct_indices:
+                                    marker = " ✅"
+                                elif i in user_selected_indices:
+                                    marker = " ❌"
+
+                                style = "👉 " if i in user_selected_indices else "— "
+                                options_text += f"{style}{i + 1}. {opt}{marker}\n"
+
+                            if is_correct:
+                                if user["last_solved_date"] != today_str:
+                                    user["streak"] += 1
+                                    user["last_solved_date"] = today_str
+                                engine.add_user_xp(user, 1)
+                                res_text = f"✅ Верно!\n\n{options_text}\n" + (
+                                    f"\n🆙 Новый балл: {user['score']}!" if user["score"] > old_score else "")
+                            else:
+                                engine.remove_user_xp(user, 1)
+                                user["streak"] = 0
+                                res_text = f"❌ Ошибка.\n\n{options_text}\nШтраф: -1 XP." + (
+                                    f"\n📉 Балл упал до {user['score']}." if user["score"] < old_score else "")
+
+                        # Сохраняем обновленного пользователя
                         db.update_user_data(user_id, user, platform="vk")
 
                         # Проверка повышения лиги
@@ -201,6 +235,7 @@ def main_loop():
                         post_kb = get_vk_keyboard(
                             [[{"text": "✨ Объяснить ошибку", "color": "primary"}, {"text": "🏠 Меню"}]])
                         send_msg(user_id, res_text, post_kb)
+
                         # Сохраняем сессию для объяснения, но меняем стейт
                         active_sessions[user_id]["state"] = "after_solve"
                         continue
@@ -244,19 +279,33 @@ def main_loop():
                         q = get_random_task()
                         if q:
                             active_sessions[user_id] = {"state": "solving", "task_data": q}
-                            opts = "\n".join([f"{i + 1}. {opt}" for i, opt in enumerate(q['options'])])
-                            msg_text = f"📝 Задание №{q['type']}\n\n{q['instruction']}\n\n{opts}\n\n👉 Введи цифры ответа:"
-                            msg_text = reset_msg + msg_text
 
+                            is_text_task = "answer_variants" in q and len(q["answer_variants"]) > 0
+
+                            if is_text_task:
+                                q['instruction'].replace("\n", "\n\n")
+                                msg_text = f"📝 Задание №{q['type']}\n\n{q['instruction']}\n\n⌨️ Напиши ответ сообщением:"
+                            else:
+                                opts = "\n".join([f"{i + 1}. {opt}" for i, opt in enumerate(q.get('options', []))])
+                                msg_text = f"📝 Задание №{q['type']}\n\n{q['instruction']}\n\n{opts}\n\n👉 Введи цифры ответа:"
+
+                            msg_text = reset_msg + msg_text
                             send_msg(user_id, msg_text, get_vk_keyboard([[{"text": "🏠 Меню", "color": "negative"}]]))
                         else:
                             send_msg(user_id, "Задания не найдены.",
                                      get_vk_keyboard([[{"text": "🏠 Меню", "color": "negative"}]]))
 
-                    elif text_l == "✨ объяснить ошибку" and state == "after_solve":
+                    elif text_l == "✨ разбор от ИИ" and state == "after_solve":
                         q = session.get("task_data", {})
                         send_msg(user_id, "⏳ ИИ готовит разбор...")
-                        prompt = f"Разбери задание: {q['instruction']}\nВарианты: {q['options']}\nОтветы: {q['correct_indexes']}\nОбъясни кратко."
+
+                        is_text_task = "answer_variants" in q and len(q["answer_variants"]) > 0
+
+                        if is_text_task:
+                            prompt = f"Разбери задание ЕГЭ: {q.get('instruction', '')}\nПравильные ответы: {q.get('answer_variants', [])}\nОбъясни кратко, почему так."
+                        else:
+                            prompt = f"Разбери задание: {q.get('instruction', '')}\nВарианты: {q.get('options', [])}\nВерные ответы (индексы): {q.get('correct_indexes', [])}\nОбъясни кратко."
+
                         explanation = ask_gemini_sync(prompt)
                         send_msg(user_id, f"✨ Разбор:\n\n{explanation}", main_menu_kb)
                         active_sessions[user_id] = {"state": "menu"}
@@ -306,7 +355,6 @@ def notification_thread_func():
         try:
             now_utc = datetime.now(timezone.utc)
             # Получаем всех пользователей, которым нужны уведомления
-            # Убедись, что в базе данных у ВК пользователей стоит platform='vk'
             users = db.get_all_users_for_notify()
             today_str = datetime.now().strftime("%Y-%m-%d")
 
@@ -321,7 +369,6 @@ def notification_thread_func():
                 l_time = now_utc + timedelta(hours=(tz or 0))
 
                 # Проверяем, совпадает ли текущий час с часами из конфига (например, 10, 14, 18)
-                # content.NOTIFICATION_HOURS — это список [10, 14, 18] или аналогичный
                 if any(l_time.hour == int(h) and abs(l_time.minute - (30 if h % 1 != 0 else 0)) < 5 for h in
                        content.NOTIFICATION_HOURS):
                     notify_text = content.get_notification(l_time)
