@@ -6,17 +6,17 @@ def get_max_xp(score: int) -> int:
     """Возвращает количество заданий (XP), нужных для получения следующего балла."""
     if score < 50:
         return 1
-    elif score < 60:
+    if score < 60:
         return 3
-    elif score < 70:
+    if score < 70:
         return 6
-    elif score < 80:
+    if score < 80:
         return 13
-    elif score < 90:
+    if score < 90:
         return 26
-    elif score < 99:
+    if score < 99:
         return 50
-    elif score == 99:
+    if score == 99:
         return 100
     return 1
 
@@ -70,8 +70,20 @@ def check_streak(user: dict) -> int:
 
 
 def get_streak_icon(streak: int) -> str:
-    if streak == 0: return "🌑"
-    if streak < 3: return "🔥"
-    if streak < 7: return "💥"
-    if streak < 30: return "☄️"
-    return "☀️"
+    thresholds = [
+        (365, "👑"),
+        (100, "💯"),
+        (30, "☀️"),
+        (7, "☄️"),
+        (3, "💥"),
+        (1, "🔥"),
+    ]
+
+    if streak == 0:
+        return "🌑"
+
+    for threshold, icon in thresholds:
+        if streak >= threshold:
+            return icon
+
+    return "🔥"

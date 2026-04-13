@@ -8,6 +8,7 @@ import database as db
 import data_content as content
 import keyboards as kb
 import engine
+from data_content import get_streak_congrats
 from handlers.utils import get_random_task, handle_streak_check, ask_gemini
 
 router = Router()
@@ -102,11 +103,13 @@ async def handle_text_answer(message: Message):
     old_league = content.get_league(old_score)
 
     if is_correct:
+        engine.add_user_xp(db_data, 1)
+        res_text = f"✅ *Верно!*\nОтвет: `{q['answer_variants'][0]}`"
         if db_data["last_solved_date"] != today_str:
             db_data["streak"] += 1
             db_data["last_solved_date"] = today_str
-        engine.add_user_xp(db_data, 1)
-        res_text = f"✅ *Верно!*\nОтвет: `{q['answer_variants'][0]}`"
+        if streak_congrats := get_streak_congrats(db_data["streak"]):
+            res_text = streak_congrats + "\n\n" + res_text
     else:
         engine.remove_user_xp(db_data, 1)
         correct_display = " / ".join(q["answer_variants"])

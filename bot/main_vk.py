@@ -12,6 +12,7 @@ import config
 import database as db
 import data_content as content
 import engine
+from data_content import get_streak_congrats
 from handlers.utils import get_random_task
 
 # Инициализация ВК
@@ -152,9 +153,7 @@ def main_loop():
 
                         # Определяем тип задания
                         is_text_task = "answer_variants" in q and len(q["answer_variants"]) > 0
-                        is_correct = False
                         options_text = ""
-                        res_text = ""
 
                         old_score = user["score"]
                         old_league = content.get_league(old_score)
@@ -174,12 +173,14 @@ def main_loop():
 
                             # Начисляем/отнимаем очки для текстового задания
                             if is_correct:
-                                if user["last_solved_date"] != today_str:
-                                    user["streak"] += 1
-                                    user["last_solved_date"] = today_str
                                 engine.add_user_xp(user, 1)
                                 res_text = f"✅ Верно!\nОтвет: {q['answer_variants'][0]}\n" + (
                                     f"\n🆙 Новый балл: {user['score']}!" if user["score"] > old_score else "")
+                                if user["last_solved_date"] != today_str:
+                                    user["streak"] += 1
+                                    user["last_solved_date"] = today_str
+                                    if streak_congrats := get_streak_congrats(user["streak"]):
+                                        res_text = streak_congrats + "\n\n" + res_text
                             else:
                                 engine.remove_user_xp(user, 1)
                                 user["streak"] = 0
@@ -200,27 +201,24 @@ def main_loop():
                             is_correct = user_selected_indices == correct_indices
 
                             # Формируем текст разбора для цифровых вариантов
-                            for i, opt in enumerate(q.get('options', [])):
-                                marker = ""
-                                if i in correct_indices:
-                                    marker = " ✅"
-                                elif i in user_selected_indices:
-                                    marker = " ❌"
-
-                                style = "👉 " if i in user_selected_indices else "— "
-                                options_text += f"{style}{i + 1}. {opt}{marker}\n"
+                            options_text = "\n".join(
+                                f"{'👉 ' if i in user_selected_indices else '— '}{i + 1}. {opt}{' ✅' if i in correct_indices else (' ❌' if i in user_selected_indices else '')}"
+                                for i, opt in enumerate(q.get('options', []))
+                            )
 
                             if is_correct:
-                                if user["last_solved_date"] != today_str:
-                                    user["streak"] += 1
-                                    user["last_solved_date"] = today_str
                                 engine.add_user_xp(user, 1)
                                 res_text = f"✅ Верно!\n\n{options_text}\n" + (
                                     f"\n🆙 Новый балл: {user['score']}!" if user["score"] > old_score else "")
+                                if user["last_solved_date"] != today_str:
+                                    user["streak"] += 1
+                                    user["last_solved_date"] = today_str
+                                    if streak_congrats := get_streak_congrats(user["streak"]):
+                                        res_text = streak_congrats + "\n\n" + res_text
                             else:
                                 engine.remove_user_xp(user, 1)
                                 user["streak"] = 0
-                                res_text = f"❌ Ошибка.\n\n{options_text}\nШтраф: -1 XP." + (
+                                res_text = f"❌ Ошибка.\n\n{options_text}\n\nШтраф: -1 XP." + (
                                     f"\n📉 Балл упал до {user['score']}." if user["score"] < old_score else "")
 
                         # Сохраняем обновленного пользователя
@@ -233,7 +231,7 @@ def main_loop():
 
                         # Кнопка для разбора ИИ
                         post_kb = get_vk_keyboard(
-                            [[{"text": "✨ Объяснить ошибку", "color": "primary"}, {"text": "🏠 Меню"}]])
+                            [[{"text": "✨ Разбор от ИИ", "color": "primary"}, {"text": "🏠 Меню"}]])
                         send_msg(user_id, res_text, post_kb)
 
                         # Сохраняем сессию для объяснения, но меняем стейт
@@ -351,36 +349,61 @@ def send_notification_msg(user_id, text):
 def notification_thread_func():
     """Функция, которая будет крутиться в фоновом потоке"""
     print("🔔 Поток уведомлений ВК запущен...\n")
+
+    # Хранилище: кому и в какой час мы уже отправили пуш
+    # Формат: {"user_id_hour"} -> "123456_9", "123456_15"
+    notified_today = set()
+
     while True:
         try:
             now_utc = datetime.now(timezone.utc)
-            # Получаем всех пользователей, которым нужны уведомления
+
+            # Раз в час очищаем кэш отправленных
+            if now_utc.minute == 0:
+                notified_today.clear()
+
             users = db.get_all_users_for_notify()
-            today_str = datetime.now().strftime("%Y-%m-%d")
 
             for u_id, pl, tz, last_date in users:
                 if pl != 'vk':
-                    continue  # Игнорируем ТГ пользователей в этом потоке
+                    continue
 
-                if last_date == today_str:
-                    continue  # Пользователь сегодня уже решал
+                    # 1. Считаем локальное время пользователя с защитой от None
+                tz_offset = tz if tz is not None else 3  # по умолчанию МСК (UTC+3)
+                l_time = now_utc + timedelta(hours=tz_offset)
 
-                # Вычисляем локальное время пользователя
-                l_time = now_utc + timedelta(hours=(tz or 0))
+                # 2. Правильная локальная дата для проверки last_date
+                user_today_str = l_time.strftime("%Y-%m-%d")
+                if last_date == user_today_str:
+                    continue  # Сегодня уже решал
 
-                # Проверяем, совпадает ли текущий час с часами из конфига (например, 10, 14, 18)
-                if any(l_time.hour == int(h) and abs(l_time.minute - (30 if h % 1 != 0 else 0)) < 5 for h in
+                # 3. Проверка попадания в час рассылки
+                current_hour = l_time.hour
+                current_minute = l_time.minute
+
+                if any(current_hour == int(h) and 0 <= current_minute - (30 if h % 1 != 0 else 0) < 15 for h in
                        content.NOTIFICATION_HOURS):
+
+                    # 4. Защита от дублей
+                    notify_key = f"{u_id}_{current_hour}"
+                    if notify_key in notified_today:
+                        continue  # Уже отправляли в этот час
+
+                    # 5. Отправка
                     notify_text = content.get_notification(l_time)
                     send_notification_msg(u_id, notify_text)
-                    print(f"Отправлено уведомление пользователю {u_id} в {l_time}")
-                    time.sleep(0.5)  # Небольшая пауза, чтобы не спамить в API ВК
+                    print(f"✅ Отправлено уведомление ВК пользователю {u_id} в {l_time.strftime('%H:%M')}")
+
+                    # Запоминаем, что пуш отправлен
+                    notified_today.add(notify_key)
+
+                    time.sleep(0.5)  # Защита от лимитов ВК
 
         except Exception as e:
             print(f"⚠️ Ошибка в потоке уведомлений: {e}")
 
-        # Проверяем раз в 10 минут (600 секунд)
-        time.sleep(600)
+        # Проверяем раз в 5 минут (300 секунд), чтобы точно не пропустить окно
+        time.sleep(300)
 
 
 if __name__ == "__main__":
