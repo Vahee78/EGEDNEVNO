@@ -57,3 +57,12 @@ def get_tz_kb():
         builder.button(text=label, callback_data=f"reg_tz_{tz}")
     builder.adjust(3)
     return builder.as_markup()
+
+
+def get_after_explanation_kb(q_id=None):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔄️ Попробовать снова", callback_data=f"explain_{q_id}") if q_id else None
+    builder.button(text="➡️ Решать еще", callback_data="play")
+    builder.button(text="🏠 Меню", callback_data="menu")
+    builder.adjust(1)
+    return builder.as_markup()

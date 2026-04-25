@@ -10,6 +10,7 @@ import keyboards as kb
 import engine
 from data_content import get_streak_congrats
 from handlers.utils import get_random_task, handle_streak_check, ask_gemini
+from keyboards import get_after_explanation_kb
 
 router = Router()
 
@@ -222,19 +223,16 @@ async def submit_answer(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("explain_"))
 async def explain_gemini(callback: CallbackQuery):
+    print(f"{callback.from_user.first_name} ({callback.from_user.id}) запросил разбор от ИИ")
+
     q_id = callback.data.split("_")[1]
     session = active_sessions.get(callback.from_user.id)
 
-    if not session or str(session["task_data"]["id"]) != str(q_id):
+    if not session or str(session["task_data"]["id"]) != q_id:
         return await callback.answer("Данные задания утеряны.")
 
     q = session["task_data"]
     await callback.answer("Готовлю разбор...")
-
-    builder = InlineKeyboardBuilder()
-    builder.button(text="➡️ Решать еще", callback_data="play")
-    builder.button(text="🏠 Меню", callback_data="menu")
-    builder.adjust(1)
 
     try:
         correct_labels = [q["options"][i] for i in q["correct_indexes"]] if q.get('options') else str(*q['answer_variants'])
@@ -259,10 +257,15 @@ async def explain_gemini(callback: CallbackQuery):
 
         explanation = await ask_gemini(prompt)
         explanation += "*" if explanation.count("*") % 2 else ""
-        print(explanation)
-        await callback.message.answer(f"✨ *Разбор от ИИ:*\n\n{explanation}", reply_markup=builder.as_markup(),
+        # print(explanation)
+        if "⚠️" in explanation:
+            reply_markup = get_after_explanation_kb(q_id)
+        else:
+            reply_markup = get_after_explanation_kb()
+            active_sessions.pop(callback.from_user.id, None)
+        await callback.message.answer(f"✨ *Разбор от ИИ:*\n\n{explanation}", reply_markup=reply_markup,
                                       parse_mode="Markdown")
-        active_sessions.pop(callback.from_user.id, None)
     except Exception as e:
         print(e)
-        await callback.message.answer("⚠️ Ошибка разбора.", reply_markup=builder.as_markup())
+        reply_markup = get_after_explanation_kb(q_id)
+        await callback.message.answer("⚠️ Ошибка разбора.", reply_markup=reply_markup, parse_mode="Markdown")

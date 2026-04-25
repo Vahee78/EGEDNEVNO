@@ -2,13 +2,28 @@ import os
 import json
 import random
 import aiohttp
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 import config
 import database as db
 import engine
 import data_content as content
 
+
+def do_ege_ost(days:int) -> str:
+    emoji = "⏳"
+    if days <= 0:
+        return ("Да пребудет с вами благодать на испытании Едином! Да будет текст ясен как слово пророка, "
+                "а тема для сочинения — легка, как перышко. Да не встретится вам в задании третьем гробов, "
+                "что вводят в страх; да будут в четвертом лишь ударения, ведомые сердцу, а в слове вашем — "
+                "полнота логики и связности, дабы получить награду великую. "
+                "Ибо сказано: «Не бойся, ибо Я с тобою» (Исаия 43:5).\n\n"
+                "Воздохните духом глубоко и выдохните тревогу, ибо вы всё напишете! 🍀")
+    if not (11 <= days % 100 <= 14) and (1 < days % 10 < 5):
+        return f"{emoji}До ЕГЭ осталось {days} дня"
+    if days % 10 == 1:
+        return f"{emoji}До ЕГЭ остался {days} день"
+    return f"{emoji}До ЕГЭ осталось {days} дней"
 
 def get_random_task():
     """Выбирает случайное задание из папки tasks/"""
@@ -56,12 +71,16 @@ def get_menu_text(user_id: int) -> str:
 
     reset_msg = f"\n\n⚠️ *Ваш стрик сгорел!* -{was_reset} XP" if was_reset else ""
 
+    ege_date = date(2026, 6, 4)
+    today = date.today()
+
     return (
-        f"📊 *Ваша статистика:*\n"
+        f"📊 *Ваша статистика:*\n\n"
         f"{league['icon']} Лига: {league['name']} ({league['desc']})\n"
         f"🎯 Цель: {user['target']} | 🏆 Балл: {user['score']}\n"
         f"{streak_icon} Стрик: {user['streak']} | 🛤 XP: {user['xp']}/{max_xp}\n"
-        f"📅 Сегодня: {status}{reset_msg}"
+        f"📅 Сегодня: {status}{reset_msg}\n\n"
+        f"{do_ege_ost((ege_date-today).days)}"
     )
 
 
