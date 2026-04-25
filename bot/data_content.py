@@ -30,7 +30,7 @@ def get_streak_congrats(streak: int):
 
 def get_notification(time):
     hour = time.hour
-    if 4 <= hour <= 12:
+    if 4 <= hour <= 13:
         notification = random.choice(DUO_QUOTES["standard"])
     elif hour <= 19:
         notification = random.choice(DUO_QUOTES["funny"])
@@ -39,8 +39,9 @@ def get_notification(time):
     return f"🔔 {notification}"
 
 
-NOTIFICATION_HOURS = [9, 12, 15, 18, 20, 22, 22.5, 23, 23.5]
-
+# в будущем планируется добавить ввод частоты уведомлений, это будет частый
+# NOTIFICATION_HOURS = [8, 9, 12, 15, 18, 20, 22, 22.5, 23, 23.5]
+NOTIFICATION_HOURS = [9, 15, 18, 20, 22, 23]
 
 DUO_QUOTES = {
     "standard":

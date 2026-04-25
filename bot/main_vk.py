@@ -153,7 +153,6 @@ def main_loop():
 
                         # Определяем тип задания
                         is_text_task = "answer_variants" in q and len(q["answer_variants"]) > 0
-                        options_text = ""
 
                         old_score = user["score"]
                         old_league = content.get_league(old_score)

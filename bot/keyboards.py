@@ -1,14 +1,12 @@
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 
-def get_reply_kb():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🎯 Изменить цель"), KeyboardButton(text="🕒 Сменить часовой пояс")]
-        ],
-        resize_keyboard=True
-    )
+def get_settings_kb():
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🎯 Изменить цель", callback_data="change_target")
+    builder.button(text="🕒 Сменить часовой пояс", callback_data="change_tz")
+    builder.adjust(1)
+    return builder.as_markup()
 
 
 def get_main_menu_kb():

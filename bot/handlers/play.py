@@ -28,12 +28,12 @@ def format_task_text(q: dict) -> tuple[str, list]:
         footer = "\n\n_Выбери правильные варианты (кнопками):_"
     else:
         # Для 5, 6, 7 заданий список опций обычно уже вшит в инструкцию или текст
-        q['instruction'].replace("\n", "\n\n")
+        q['instruction'] = q['instruction'].replace("\n", "\n\n", 1)
         options_text = ""
         option_numbers = []
-        footer = "\n⌨️ *Напиши ответ сообщением:* "
+        footer = "⌨️ *Напиши ответ сообщением:* "
 
-    text = f"📝 *Задание №{q['type']}*\n\n{q['instruction']}\n{options_text}{footer}"
+    text = f"📝 *Задание №{q['type']}*\n\n{q['instruction']}\n\n{options_text}{footer}"
     return text, option_numbers
 
 
@@ -108,8 +108,8 @@ async def handle_text_answer(message: Message):
         if db_data["last_solved_date"] != today_str:
             db_data["streak"] += 1
             db_data["last_solved_date"] = today_str
-        if streak_congrats := get_streak_congrats(db_data["streak"]):
-            res_text = streak_congrats + "\n\n" + res_text
+            if streak_congrats := get_streak_congrats(db_data["streak"]):
+                res_text = streak_congrats + "\n\n" + res_text
     else:
         engine.remove_user_xp(db_data, 1)
         correct_display = " / ".join(q["answer_variants"])
@@ -144,7 +144,7 @@ async def toggle_option(callback: CallbackQuery):
     opt_idx = int(opt_idx)
 
     session = active_sessions.get(callback.from_user.id)
-    if not session or session.get("state") != "solving" or str(session["task_data"]["id"]) != str(q_id):
+    if not session or session.get("state") != "solving" or str(session["task_data"]["id"]) != q_id:
         return await callback.answer("Задание завершено или устарело.")
 
     if opt_idx in session["selected"]:
@@ -154,7 +154,7 @@ async def toggle_option(callback: CallbackQuery):
 
     option_numbers = [str(i + 1) for i in range(len(session["task_data"]["options"]))]
     await callback.message.edit_reply_markup(
-        reply_markup=kb.get_question_kb(q_id, option_numbers, session["selected"])
+        reply_markup=kb.get_question_kb(int(q_id), option_numbers, session["selected"])
     )
     await callback.answer()
 
@@ -196,12 +196,14 @@ async def submit_answer(callback: CallbackQuery):
     old_league = content.get_league(old_score)
 
     if is_correct:
-        if db_data["last_solved_date"] != today_str:
-            db_data["streak"] += 1
-            db_data["last_solved_date"] = today_str
         engine.add_user_xp(db_data, 1)
         res_text = f"✅ *Верно!*\n\n{options_text}" + (
             f"\n🆙 Новый балл: {db_data['score']}!" if db_data["score"] > old_score else "")
+        if db_data["last_solved_date"] != today_str:
+            db_data["streak"] += 1
+            db_data["last_solved_date"] = today_str
+            if streak_congrats := get_streak_congrats(db_data["streak"]):
+                res_text = streak_congrats + "\n\n" + res_text
     else:
         engine.remove_user_xp(db_data, 1)
         res_text = f"❌ *Ошибка.*\n\n{options_text}\nШтраф: -1 XP." + (
@@ -235,11 +237,29 @@ async def explain_gemini(callback: CallbackQuery):
     builder.adjust(1)
 
     try:
-        correct_labels = [q["options"][i] for i in q["correct_indexes"]] if q["options"] else "смотрите текст задания"
-        prompt = (f"Разбери задание ЕГЭ по русскому: {q['instruction']}\nВарианты: {q['options']}\n"
-                  f"Правильные ответы: {correct_labels}\nОбъясни очень кратко и по делу.")
+        correct_labels = [q["options"][i] for i in q["correct_indexes"]] if q.get('options') else str(*q['answer_variants'])
+
+        prompt = f"""Ты — крутой дружелюбный учитель русского, который очень ценит краткость! 🔥
+        Твоя задача: подсказать правильный путь, используя понятные объяснения и капельку поддержки и юмора. 
+        Никаких приветствий (Отличная задача!), сразу приступай к делу!
+
+        ДАННЫЕ:
+        Задание: {q['instruction']}
+        Варианты: {q.get('options', q.get('text', 'см. задание'))}
+
+        ИНСТРУКЦИЯ:
+        1. Пройдись по всему заданию по порядку и объясни почему именно {correct_labels} - правильные ответы
+        2. Никаких приветсвтий, вводных слов и итогов. Сразу приступай к объяснению, краткость - сестра таланта!
+        3. Оформление: Только *жирный* шрифт (именно *так*, а не **так**) для выделение важных слов, 
+        а также нумерация, если в задании несколько вариантов (например, 5)
+        4. Стиль: Дружелюбный и бодрый. Объясняй кратко, но понятно.
+        5. Пользователь ошибся и выбрал не {correct_labels}.
+        Подбодри его в конце, например, скажи, что всё получится или пошути про что-то, связанное с текстом задания
+        """
 
         explanation = await ask_gemini(prompt)
+        explanation += "*" if explanation.count("*") % 2 else ""
+        print(explanation)
         await callback.message.answer(f"✨ *Разбор от ИИ:*\n\n{explanation}", reply_markup=builder.as_markup(),
                                       parse_mode="Markdown")
         active_sessions.pop(callback.from_user.id, None)

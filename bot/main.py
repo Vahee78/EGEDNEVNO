@@ -22,11 +22,11 @@ async def notification_loop():
         today_str = now_utc.now().strftime("%Y-%m-%d")
 
         for u_id, pl, tz, last_date in users:
-            if pl != 'tg': continue
-            if last_date == today_str: continue
+            if pl != 'tg' or last_date == today_str:
+                continue  # пропускаем не тг юзеров и тех, кто сегодня решал
 
             l_time = now_utc + timedelta(hours=tz)
-            if any(l_time.hour == int(h) and 0 < l_time.minute - (30 if h % 1 != 0 else 0) < 15 for h in
+            if any(l_time.hour == int(h) and 0 < l_time.minute - (30 if h % 1 != 0 else 0) < 10 for h in
                    content.NOTIFICATION_HOURS):
                 try:
                     await bot.send_message(u_id, content.get_notification(l_time))
@@ -48,7 +48,8 @@ async def main():
     await bot.set_my_commands([
         BotCommand(command="start", description="🔄 Перезапустить"),
         BotCommand(command="menu", description="📋 Меню"),
-        BotCommand(command="bot", description="📝 Решать")
+        BotCommand(command="bot", description="📝 Решать"),
+        BotCommand(command="settings", description="⚙️ Настройки")
     ])
 
     # Запускаем фоновую задачу уведомлений
