@@ -2,7 +2,6 @@ from datetime import datetime
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 import database as db
 import data_content as content
@@ -11,6 +10,8 @@ import engine
 from data_content import get_streak_congrats
 from handlers.utils import get_random_task, handle_streak_check, ask_gemini
 from keyboards import get_after_explanation_kb
+
+from loguru import logger
 
 router = Router()
 
@@ -223,7 +224,7 @@ async def submit_answer(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("explain_"))
 async def explain_gemini(callback: CallbackQuery):
-    print(f"{callback.from_user.first_name} ({callback.from_user.id}) запросил разбор от ИИ")
+    logger.info(f"{callback.from_user.first_name} ({callback.from_user.id}) запросил разбор от ИИ")
 
     q_id = callback.data.split("_")[1]
     session = active_sessions.get(callback.from_user.id)
@@ -257,7 +258,6 @@ async def explain_gemini(callback: CallbackQuery):
 
         explanation = await ask_gemini(prompt)
         explanation += "*" if explanation.count("*") % 2 else ""
-        # print(explanation)
         if "⚠️" in explanation:
             reply_markup = get_after_explanation_kb(q_id)
         else:
@@ -266,6 +266,6 @@ async def explain_gemini(callback: CallbackQuery):
         await callback.message.answer(f"✨ *Разбор от ИИ:*\n\n{explanation}", reply_markup=reply_markup,
                                       parse_mode="Markdown")
     except Exception as e:
-        print(e)
+        logger.warning(f"Ошибка при обращении к ИИ: {e}")
         reply_markup = get_after_explanation_kb(q_id)
         await callback.message.answer("⚠️ Ошибка разбора.", reply_markup=reply_markup, parse_mode="Markdown")

@@ -9,6 +9,8 @@ import database as db
 import engine
 import data_content as content
 
+from loguru import logger
+
 
 def do_ege_ost(days:int) -> str:
     emoji = "⏳"
@@ -39,11 +41,10 @@ def get_random_task():
             task = random.choice(tasks_list)
             task["type"] = chosen_file.split('_')[1].split('.')[0]
             if int(task["type"]) == 4:
-                task[
-                    "instruction"] = "Укажите варианты ответов, в которых верно выделена буква, обозначающая ударный гласный звук. Запишите номера ответов."
+                task["instruction"] = "Укажите варианты ответов, в которых верно выделена буква, обозначающая ударный гласный звук. Запишите номера ответов."
             return task
     except Exception as e:
-        print(f"Ошибка загрузки задания: {e}")
+        logger.warning(f"Ошибка загрузки задания: {e}")
         return None
 
 
@@ -92,7 +93,7 @@ async def ask_gemini(prompt: str) -> str:
             async with session.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}) as resp:
                 if resp.status != 200:
                     error_text = await resp.text()
-                    print(f"Gemini API Error {resp.status}: {error_text}")
+                    logger.warning(f"Gemini API Error {resp.status}: {error_text}")
                     return "⚠️ Ошибка API."
                 data = await resp.json()
                 candidates = data.get("candidates", [])
@@ -100,5 +101,5 @@ async def ask_gemini(prompt: str) -> str:
                     return "⚠️ ИИ не смог сгенерировать ответ."
                 return candidates[0]["content"]["parts"][0]["text"]
     except Exception as e:
-        print(f"Ошибка при вызове Gemini: {e}")
+        logger.warning(f"Ошибка при вызове Gemini: {e}")
         return "⚠️ Не удалось связаться с ИИ."
