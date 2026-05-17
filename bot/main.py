@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from aiogram import Bot, Dispatcher
 from aiogram.types import BotCommand
+from aiogram.exceptions import TelegramForbiddenError
 
 import config
 import database as db
@@ -25,9 +26,9 @@ logger.add(
 # 2. Запись в файл с авто-очисткой
 logger.add(
     "logs/bot.log",
-    rotation="5 MB",      # Как только файл разрастется до 5 МБ — создастся новый
+    rotation="5 MB",  # Как только файл разрастется до 5 МБ — создастся новый
     retention="10 days",  # Логи старше 10 дней будут сами удаляться
-    level="INFO",         # В файл пишем только важные вещи, без дебага
+    level="INFO",  # В файл пишем только важные вещи, без дебага
     encoding="utf-8"
 )
 
@@ -52,9 +53,11 @@ async def notification_loop():
                 try:
                     await bot.send_message(u_id, content.get_notification(l_time))
                     await asyncio.sleep(0.05)  # Защита от спам-блока Telegram
+                except TelegramForbiddenError:
+                    pass  # Здесь нужно добавить отметку в бд о том, что пользователь заблокировал бота
+                    # и больше не писать ему
                 except Exception as e:
-                    if "bot was blocked by the user" not in e:
-                        logger.warning(f"Ошибка отправки уведомления {u_id}: {e}")
+                    logger.warning(f"Ошибка отправки уведомления {u_id}: {e}")
 
         await asyncio.sleep(600)
 
