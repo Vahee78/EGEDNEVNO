@@ -1,0 +1,5 @@
+aiogram
+vk_api
+requests
+aiohttp
+loguru
