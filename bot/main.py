@@ -39,32 +39,36 @@ dp = Dispatcher()
 async def notification_loop():
     """Фоновая задача для рассылки уведомлений"""
     while True:
-        now_utc = datetime.now(timezone.utc)
-        users = db.get_all_users_for_notify()
-        today_str = now_utc.now().strftime("%Y-%m-%d")
+        try:
+            now_utc = datetime.now(timezone.utc)
+            users = db.get_all_users_for_notify()
+            today_str = now_utc.strftime("%Y-%m-%d")
 
-        for u_id, pl, tz, last_date in users:
-            if pl != 'tg' or last_date == today_str:
-                continue  # пропускаем не тг юзеров и тех, кто сегодня решал
+            for u_id, pl, tz, last_date in users:
+                if pl != 'tg' or last_date == today_str:
+                    continue  # Пропускаем не тг юзеров и тех, кто сегодня решал
 
-            l_time = now_utc + timedelta(hours=tz)
-            if any(l_time.hour == int(h) and 0 < l_time.minute - (30 if h % 1 != 0 else 0) < 10 for h in
-                   content.NOTIFICATION_HOURS):
-                try:
-                    await bot.send_message(u_id, content.get_notification(l_time))
-                    await asyncio.sleep(0.05)  # Защита от спам-блока Telegram
-                except TelegramForbiddenError:
-                    pass  # Здесь нужно добавить отметку в бд о том, что пользователь заблокировал бота
-                    # и больше не писать ему
-                except Exception as e:
-                    logger.warning(f"Ошибка отправки уведомления {u_id}: {e}")
+                l_time = now_utc + timedelta(hours=tz)
+                # Проверяем, пора ли отправлять
+                if any(l_time.hour == int(h) and 0 < l_time.minute - (30 if h % 1 != 0 else 0) < 10 for h in content.NOTIFICATION_HOURS):
+                    try:
+                        await bot.send_message(u_id, content.get_notification(l_time))
+                        logger.info(f"Уведомление отправлено пользователю {u_id}")
+                        await asyncio.sleep(0.05)  # Защита от спам-блока Telegram
+                    except TelegramForbiddenError:
+                        logger.warning(f"Пользователь {u_id} заблокировал бота. Отключаем рассылку.")
+                        db.disable_notifications(u_id)
+                    except Exception as e:
+                        logger.error(f"Ошибка отправки уведомления {u_id}: {e}")
 
-        await asyncio.sleep(600)
+        except Exception as loop_error:
+            logger.error(f"Ошибка в цикле уведомлений: {loop_error}")
+
+        await asyncio.sleep(600)  # Проверка раз в 10 минут
 
 
 async def main():
     db.init_db()
-    logger.info("Бот запущен")
 
     # Подключаем модули (роутеры) к главному диспетчеру
     dp.include_router(menu.router)
@@ -78,11 +82,16 @@ async def main():
     ])
 
     # Запускаем фоновую задачу уведомлений
+    logger.info("Регистрация фоновой задачи уведомлений...")
     _ = asyncio.create_task(notification_loop())
 
     # Запускаем бота
+    logger.info("Бот запущен")
     await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.warning("Бот был остановлен пользователем вручную.")

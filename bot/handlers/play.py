@@ -41,8 +41,12 @@ def format_task_text(q: dict) -> tuple[str, list]:
 
 async def start_new_task(user_id: int, message_or_call) -> None:
     """Универсальная функция запуска задания (для команды и для кнопки)"""
+    trigger_type = "CALLBACK" if isinstance(message_or_call, CallbackQuery) else "COMMAND"
+    logger.info(f"Запуск нового задания для пользователя {user_id} через {trigger_type}")
+
     was_reset = handle_streak_check(user_id)
     if was_reset:
+        logger.warning(f"У пользователя {user_id} сгорел стрик! Потеряно XP: {was_reset}")
         msg_text = f"⚠️ *Ваш стрик сгорел за неактивность!* -{was_reset} XP"
         if isinstance(message_or_call, CallbackQuery):
             await message_or_call.message.answer(msg_text, parse_mode="Markdown")
@@ -51,7 +55,7 @@ async def start_new_task(user_id: int, message_or_call) -> None:
 
     q = get_random_task()
     if not q:
-        # aiogram позволяет ответить по-разному в зависимости от того, Message это или CallbackQuery
+        logger.error(f"Ошибка при получении задания из БД для {user_id} — база пуста или недоступна")
         msg = "Задания временно недоступны."
         if isinstance(message_or_call, CallbackQuery):
             await message_or_call.answer(msg)
@@ -61,45 +65,57 @@ async def start_new_task(user_id: int, message_or_call) -> None:
 
     # Инициализируем сессию
     active_sessions[user_id] = {"task_data": q, "selected": [], "state": "solving"}
+    logger.debug(f"Сессия создана для {user_id}. ID задания: {q['id']}, тип: {q['type']}")
 
     text, option_numbers = format_task_text(q)
 
     # Если это текстовое задание, клавиатура будет пустой или содержать только тех. кнопки
     is_text_type = "answer_variants" in q and q["answer_variants"]
     if is_text_type:
-        # Для текстовых заданий кнопки выбора не нужны
         reply_markup = None
     else:
         reply_markup = kb.get_question_kb(q["id"], option_numbers)
 
     if isinstance(message_or_call, CallbackQuery):
+        logger.debug(f"Отправка задания {q['id']} пользователю {user_id} новым сообщением (после клика)")
         await message_or_call.answer()
         await message_or_call.message.answer(text, reply_markup=reply_markup, parse_mode="Markdown")
     else:
+        logger.debug(f"Отправка задания {q['id']} пользователю {user_id} ответом на команду")
         await message_or_call.answer(text, reply_markup=reply_markup, parse_mode="Markdown")
 
 
-# --- НОВЫЙ ХЕНДЛЕР: ОБРАБОТКА ТЕКСТОВОГО ОТВЕТА (5, 6, 7 задания) ---
+# --- ХЕНДЛЕР: ОБРАБОТКА ТЕКСТОВОГО ОТВЕТА (5, 6, 7 задания) ---
 @router.message(F.text, ~F.text.startswith("/"))
 async def handle_text_answer(message: Message):
     user_id = message.from_user.id
     session = active_sessions.get(user_id)
 
     # Проверяем, что пользователь действительно решает текстовое задание
-    if not session or session.get("state") != "solving":
+    if not session:
+        logger.debug(f"Игнорируем текстовое сообщение от {user_id}: активная сессия отсутствует")
+        return
+
+    if session.get("state") != "solving":
+        logger.debug(
+            f"Игнорируем текстовое сообщение от {user_id}: стейт сессии не 'solving' (текущий: '{session.get('state')}')")
         return
 
     q = session["task_data"]
     if "answer_variants" not in q or not q["answer_variants"]:
-        # Если это не текстовое задание, игнорируем или просим жать кнопки
+        logger.debug(
+            f"Игнорируем текстовое сообщение от {user_id}: текущее задание {q['id']} не предусматривает текстовый ввод")
         return
 
+    # Обработка ввода
     user_ans = message.text.lower().strip().translate(str.maketrans('', '', '.,!?'))
     correct_variants = [v.lower().strip() for v in q["answer_variants"]]
-
     is_correct = user_ans in correct_variants
 
-    # Логика начисления очков (копия из submit_answer)
+    logger.info(
+        f"Пользователь {user_id} ответил текстом на задание {q['id']}. Ввод: '{user_ans}' | Ожидалось: {correct_variants} | Результат: {is_correct}")
+
+    # Логика начисления очков
     db_data = db.get_user_data(user_id)
     today_str = datetime.now().strftime("%Y-%m-%d")
     old_score = db_data["score"]
@@ -111,6 +127,7 @@ async def handle_text_answer(message: Message):
         if db_data["last_solved_date"] != today_str:
             db_data["streak"] += 1
             db_data["last_solved_date"] = today_str
+            logger.info(f"Стрик пользователя {user_id} увеличен до {db_data['streak']} дней.")
             if streak_congrats := get_streak_congrats(db_data["streak"]):
                 res_text = streak_congrats + "\n\n" + res_text
     else:
@@ -120,6 +137,7 @@ async def handle_text_answer(message: Message):
 
     db.update_user_data(user_id, db_data)
     new_league = content.get_league(db_data["score"])
+    logger.debug(f"БД обновлена для {user_id}. Старый балл: {old_score} -> Новый балл: {db_data['score']}")
 
     # Меняем стейт, чтобы не спамить ответами
     session["state"] = "after_solve"
@@ -127,17 +145,20 @@ async def handle_text_answer(message: Message):
     await message.answer(res_text, reply_markup=kb.get_post_answer_kb(q["id"]), parse_mode="Markdown")
 
     if db_data["score"] > old_score and old_league["name"] != new_league["name"]:
+        logger.info(f"Пользователь {user_id} перешел в новую лигу: {new_league['name']}!")
         promo = f"🎊 *УРОВЕНЬ ПОВЫШЕН!*\nЛига: {new_league['name']} {new_league['icon']}"
         await message.answer(promo, parse_mode="Markdown")
 
 
 @router.message(Command("bot"))
 async def cmd_bot(message: Message):
+    logger.info(f"Команда /bot от {message.from_user.id}")
     await start_new_task(message.from_user.id, message)
 
 
 @router.callback_query(F.data == "play")
 async def send_question_callback(callback: CallbackQuery):
+    logger.info(f"Клик на кнопку 'play' от {callback.from_user.id}")
     await start_new_task(callback.from_user.id, callback)
 
 
@@ -145,15 +166,24 @@ async def send_question_callback(callback: CallbackQuery):
 async def toggle_option(callback: CallbackQuery):
     _, q_id, opt_idx = callback.data.split("_")
     opt_idx = int(opt_idx)
+    user_id = callback.from_user.id
 
-    session = active_sessions.get(callback.from_user.id)
-    if not session or session.get("state") != "solving" or str(session["task_data"]["id"]) != q_id:
+    session = active_sessions.get(user_id)
+    if not session:
+        logger.warning(f"Попытка переключения кнопок пользователем {user_id} без активной сессии")
+        return await callback.answer("Задание завершено или устарело.")
+
+    if session.get("state") != "solving" or str(session["task_data"]["id"]) != q_id:
+        logger.warning(
+            f"Устаревший клик toggle от {user_id}. Стейт: {session.get('state')}, ID в сессии: {session['task_data']['id']}, Получен: {q_id}")
         return await callback.answer("Задание завершено или устарело.")
 
     if opt_idx in session["selected"]:
         session["selected"].remove(opt_idx)
+        logger.debug(f"Юзер {user_id} убрал вариант {opt_idx + 1}. Текущий выбор: {session['selected']}")
     else:
         session["selected"].append(opt_idx)
+        logger.debug(f"Юзер {user_id} выбрал вариант {opt_idx + 1}. Текущий выбор: {session['selected']}")
 
     option_numbers = [str(i + 1) for i in range(len(session["task_data"]["options"]))]
     await callback.message.edit_reply_markup(
@@ -165,20 +195,31 @@ async def toggle_option(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("submit_"))
 async def submit_answer(callback: CallbackQuery):
     q_id = int(callback.data.split("_")[1])
-    session = active_sessions.get(callback.from_user.id)
+    user_id = callback.from_user.id
+    session = active_sessions.get(user_id)
 
     if not session or session.get("state") != "solving":
+        logger.warning(f"Попытка отправки ответа пользователем {user_id} для неактивной сессии")
         return await callback.answer("Уже решено.")
 
     if str(session["task_data"]["id"]) != str(q_id):
+        logger.warning(
+            f"Конфликт ID заданий при отправке у {user_id}. В сессии: {session['task_data']['id']}, Пришло: {q_id}")
         return await callback.answer("Ошибка сессии.")
 
     if not session["selected"]:
+        logger.debug(f"Пользователь {user_id} нажал проверить без выбора вариантов")
         return await callback.answer("Выбери хотя бы один вариант!", show_alert=True)
 
-    db_data = db.get_user_data(callback.from_user.id)
+    db_data = db.get_user_data(user_id)
     q = session["task_data"]
-    is_correct = sorted(session["selected"]) == sorted(q["correct_indexes"])
+
+    selected_sorted = sorted(session["selected"])
+    correct_sorted = sorted(q["correct_indexes"])
+    is_correct = selected_sorted == correct_sorted
+
+    logger.info(
+        f"Пользователь {user_id} отправил ответ на задание {q_id}. Выбрано: {selected_sorted} | Верно: {correct_sorted} | Результат: {is_correct}")
 
     # Формируем наглядный разбор ответов
     options_text = ""
@@ -205,6 +246,7 @@ async def submit_answer(callback: CallbackQuery):
         if db_data["last_solved_date"] != today_str:
             db_data["streak"] += 1
             db_data["last_solved_date"] = today_str
+            logger.info(f"Стрик пользователя {user_id} увеличен до {db_data['streak']} дней.")
             if streak_congrats := get_streak_congrats(db_data["streak"]):
                 res_text = streak_congrats + "\n\n" + res_text
     else:
@@ -212,12 +254,17 @@ async def submit_answer(callback: CallbackQuery):
         res_text = f"❌ *Ошибка.*\n\n{options_text}\nШтраф: -1 XP." + (
             f"\n📉 Балл упал до {db_data['score']}." if db_data["score"] < old_score else "")
 
+    # Меняем стейт сессии, чтобы предотвратить повторную отправку
+    session["state"] = "after_solve"
+
     new_league = content.get_league(db_data["score"])
-    db.update_user_data(callback.from_user.id, db_data)
+    db.update_user_data(user_id, db_data)
+    logger.debug(f"БД обновлена для {user_id}. Старый балл: {old_score} -> Новый балл: {db_data['score']}")
 
     await callback.message.edit_text(res_text, reply_markup=kb.get_post_answer_kb(q_id), parse_mode="Markdown")
 
     if db_data["score"] > old_score and old_league["name"] != new_league["name"]:
+        logger.info(f"Пользователь {user_id} перешел в новую лигу: {new_league['name']}!")
         promo_text = (f"🎊 *УРОВЕНЬ ПОВЫШЕН!*\nТы покинул лигу {old_league['name']} {old_league['icon']}.\n"
                       f"Твой новый дом — {new_league['name']} {new_league['icon']}.\n_{new_league['desc']}_")
         await callback.message.answer(promo_text, parse_mode="Markdown")
@@ -225,19 +272,27 @@ async def submit_answer(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("explain_"))
 async def explain_gemini(callback: CallbackQuery):
-    logger.info(f"{callback.from_user.first_name} ({callback.from_user.id}) запросил разбор от ИИ")
+    user_id = callback.from_user.id
+    logger.info(f"Запрос ИИ-разбора от {callback.from_user.first_name} ({user_id})")
 
     q_id = callback.data.split("_")[1]
-    session = active_sessions.get(callback.from_user.id)
+    session = active_sessions.get(user_id)
 
-    if not session or str(session["task_data"]["id"]) != q_id:
+    if not session:
+        logger.error(f"Не удалось подготовить разбор для {user_id}: сессия отсутствует в памяти")
+        return await callback.answer("Данные задания утеряны.")
+
+    if str(session["task_data"]["id"]) != q_id:
+        logger.error(
+            f"Несоответствие ID задания в сессии ({session['task_data']['id']}) и запросе ({q_id}) для {user_id}")
         return await callback.answer("Данные задания утеряны.")
 
     q = session["task_data"]
     await callback.answer("Готовлю разбор...")
 
     try:
-        correct_labels = [q["options"][i] for i in q["correct_indexes"]] if q.get('options') else str(*q['answer_variants'])
+        correct_labels = [q["options"][i] for i in q["correct_indexes"]] if q.get('options') else str(
+            *q['answer_variants'])
 
         prompt = f"""Ты — крутой дружелюбный учитель русского, который очень ценит краткость! 🔥
         Твоя задача: подсказать правильный путь, используя понятные объяснения и капельку поддержки и юмора. 
@@ -257,16 +312,26 @@ async def explain_gemini(callback: CallbackQuery):
         Подбодри его в конце, например, скажи, что всё получится или пошути про что-то, связанное с текстом задания
         """
 
+        logger.debug(f"Отправка запроса к Gemini API для пользователя {user_id}. Вопрос: {q['id']}")
         explanation = await ask_gemini(prompt)
+
+        # Корректируем разметку
         explanation += "*" if explanation.count("*") % 2 else ""
+
+        logger.info(f"Разбор от Gemini успешно получен для {user_id}. Длина текста: {len(explanation)}")
+
         if "⚠️" in explanation:
             reply_markup = get_after_explanation_kb(q_id)
+            logger.warning(f"ИИ вернул предупреждение во время генерации разбора для {user_id}")
         else:
             reply_markup = get_after_explanation_kb()
-            active_sessions.pop(callback.from_user.id, None)
+            # Очищаем сессию, так как задание полностью разобрано
+            active_sessions.pop(user_id, None)
+            logger.debug(f"Сессия пользователя {user_id} удалена после успешного объяснения.")
+
         await callback.message.answer(f"✨ *Разбор от ИИ:*\n\n{explanation}", reply_markup=reply_markup,
                                       parse_mode="Markdown")
     except Exception as e:
-        logger.warning(f"Ошибка при обращении к ИИ: {e}")
+        logger.error(f"Исключение при генерации разбора ИИ для {user_id}: {e}", exc_info=True)
         reply_markup = get_after_explanation_kb(q_id)
         await callback.message.answer("⚠️ Ошибка разбора.", reply_markup=reply_markup, parse_mode="Markdown")

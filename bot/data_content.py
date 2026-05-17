@@ -40,7 +40,7 @@ def get_notification(time):
 
 # в будущем планируется добавить ввод частоты уведомлений, это будет частый
 # NOTIFICATION_HOURS = [8, 9, 12, 15, 18, 20, 22, 22.5, 23, 23.5]
-NOTIFICATION_HOURS = [9, 15, 18, 20, 22, 23]
+NOTIFICATION_HOURS = [9, 15, 18, 20, 22, 23]  # средний
 
 DUO_QUOTES = {
     "standard":
