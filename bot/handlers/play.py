@@ -73,7 +73,8 @@ async def start_new_task(user_id: int, message_or_call) -> None:
         reply_markup = kb.get_question_kb(q["id"], option_numbers)
 
     if isinstance(message_or_call, CallbackQuery):
-        await message_or_call.message.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        await message_or_call.answer()
+        await message_or_call.message.answer(text, reply_markup=reply_markup, parse_mode="Markdown")
     else:
         await message_or_call.answer(text, reply_markup=reply_markup, parse_mode="Markdown")
 
