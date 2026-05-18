@@ -116,35 +116,35 @@ async def handle_text_answer(message: Message):
         f"Пользователь {user_id} ответил текстом на задание {q['id']}. Ввод: '{user_ans}' | Ожидалось: {correct_variants} | Результат: {is_correct}")
 
     # Логика начисления очков
-    db_data = db.get_user_data(user_id)
+    user = db.get_user_data(user_id)
     today_str = datetime.now().strftime("%Y-%m-%d")
-    old_score = db_data["score"]
+    old_score = user["score"]
     old_league = content.get_league(old_score)
 
     if is_correct:
-        engine.add_user_xp(db_data, 1)
+        engine.add_user_xp(user, 1)
         res_text = f"✅ *Верно!*\nОтвет: `{q['answer_variants'][0]}`"
-        if db_data["last_solved_date"] != today_str:
-            db_data["streak"] += 1
-            db_data["last_solved_date"] = today_str
-            logger.info(f"Стрик пользователя {user_id} увеличен до {db_data['streak']} дней.")
-            if streak_congrats := get_streak_congrats(db_data["streak"]):
+        if user["last_solved_date"] != today_str:
+            user["streak"] += 1
+            user["last_solved_date"] = today_str
+            logger.info(f"Стрик пользователя {user_id} увеличен до {user['streak']} дней.")
+            if streak_congrats := get_streak_congrats(user["streak"]):
                 res_text = streak_congrats + "\n\n" + res_text
     else:
-        engine.remove_user_xp(db_data, 1)
+        engine.remove_user_xp(user, 1)
         correct_display = " / ".join(q["answer_variants"])
         res_text = f"❌ *Ошибка.*\n\nВаш ответ: `{user_ans}`\nПравильный: `{correct_display}`\n\nШтраф: -1 XP."
 
-    db.update_user_data(user_id, db_data)
-    new_league = content.get_league(db_data["score"])
-    logger.debug(f"БД обновлена для {user_id}. Старый балл: {old_score} -> Новый балл: {db_data['score']}")
+    db.update_user_data(user_id, user)
+    new_league = content.get_league(user["score"])
+    logger.debug(f"БД обновлена для {user_id}. Старый балл: {old_score} -> Новый балл: {user['score']}")
 
     # Меняем стейт, чтобы не спамить ответами
     session["state"] = "after_solve"
 
     await message.answer(res_text, reply_markup=kb.get_post_answer_kb(q["id"]), parse_mode="Markdown")
 
-    if db_data["score"] > old_score and old_league["name"] != new_league["name"]:
+    if user["score"] > old_score and old_league["name"] != new_league["name"]:
         logger.info(f"Пользователь {user_id} перешел в новую лигу: {new_league['name']}!")
         promo = f"🎊 *УРОВЕНЬ ПОВЫШЕН!*\nЛига: {new_league['name']} {new_league['icon']}"
         await message.answer(promo, parse_mode="Markdown")
@@ -211,7 +211,7 @@ async def submit_answer(callback: CallbackQuery):
         logger.debug(f"Пользователь {user_id} нажал проверить без выбора вариантов")
         return await callback.answer("Выбери хотя бы один вариант!", show_alert=True)
 
-    db_data = db.get_user_data(user_id)
+    user = db.get_user_data(user_id)
     q = session["task_data"]
 
     selected_sorted = sorted(session["selected"])
@@ -236,34 +236,34 @@ async def submit_answer(callback: CallbackQuery):
         options_text += f"{i + 1}. {line}\n"
 
     today_str = datetime.now().strftime("%Y-%m-%d")
-    old_score = db_data["score"]
+    old_score = user["score"]
     old_league = content.get_league(old_score)
 
     if is_correct:
-        engine.add_user_xp(db_data, 1)
+        engine.add_user_xp(user, 1)
         res_text = f"✅ *Верно!*\n\n{options_text}" + (
-            f"\n🆙 Новый балл: {db_data['score']}!" if db_data["score"] > old_score else "")
-        if db_data["last_solved_date"] != today_str:
-            db_data["streak"] += 1
-            db_data["last_solved_date"] = today_str
-            logger.info(f"Стрик пользователя {user_id} увеличен до {db_data['streak']} дней.")
-            if streak_congrats := get_streak_congrats(db_data["streak"]):
+            f"\n🆙 Новый балл: {user['score']}!" if user["score"] > old_score else "")
+        if user["last_solved_date"] != today_str:
+            user["streak"] += 1
+            user["last_solved_date"] = today_str
+            logger.info(f"Стрик пользователя {user_id} увеличен до {user['streak']} дней.")
+            if streak_congrats := get_streak_congrats(user["streak"]):
                 res_text = streak_congrats + "\n\n" + res_text
     else:
-        engine.remove_user_xp(db_data, 1)
+        engine.remove_user_xp(user, 1)
         res_text = f"❌ *Ошибка.*\n\n{options_text}\nШтраф: -1 XP." + (
-            f"\n📉 Балл упал до {db_data['score']}." if db_data["score"] < old_score else "")
+            f"\n📉 Балл упал до {user['score']}." if user["score"] < old_score else "")
 
     # Меняем стейт сессии, чтобы предотвратить повторную отправку
     session["state"] = "after_solve"
 
-    new_league = content.get_league(db_data["score"])
-    db.update_user_data(user_id, db_data)
-    logger.debug(f"БД обновлена для {user_id}. Старый балл: {old_score} -> Новый балл: {db_data['score']}")
+    new_league = content.get_league(user["score"])
+    db.update_user_data(user_id, user)
+    logger.debug(f"БД обновлена для {user_id}. Старый балл: {old_score} -> Новый балл: {user['score']}")
 
     await callback.message.edit_text(res_text, reply_markup=kb.get_post_answer_kb(q_id), parse_mode="Markdown")
 
-    if db_data["score"] > old_score and old_league["name"] != new_league["name"]:
+    if user["score"] > old_score and old_league["name"] != new_league["name"]:
         logger.info(f"Пользователь {user_id} перешел в новую лигу: {new_league['name']}!")
         promo_text = (f"🎊 *УРОВЕНЬ ПОВЫШЕН!*\nТы покинул лигу {old_league['name']} {old_league['icon']}.\n"
                       f"Твой новый дом — {new_league['name']} {new_league['icon']}.\n_{new_league['desc']}_")
