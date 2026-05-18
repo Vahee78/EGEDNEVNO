@@ -57,7 +57,10 @@ async def notification_loop():
                         await asyncio.sleep(0.05)  # Защита от спам-блока Telegram
                     except TelegramForbiddenError:
                         logger.warning(f"Пользователь {u_id} заблокировал бота. Отключаем рассылку.")
-                        db.disable_notifications(u_id)
+                        user = db.get_user_data(u_id, platform="tg")
+                        user["notifications_enabled"] = 0
+                        db.update_user_data(u_id, user)
+
                     except Exception as e:
                         logger.error(f"Ошибка отправки уведомления {u_id}: {e}")
 

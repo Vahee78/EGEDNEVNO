@@ -74,31 +74,65 @@ def get_user_data(user_id, platform="tg"):
     }
 
 
-def update_user_data(user_id, data, platform="tg"):
-    """Обновляет или вставляет данные пользователя (INSERT OR REPLACE)."""
+def update_user_data(user_id: int, data: dict, platform: str = "tg"):
+    """
+    Безопасно сохраняет или обновляет данные пользователя (UPSERT).
+    Если пользователь существует, обновляются только переданные поля,
+    а старые данные гарантированно не затираются.
+    """
     logger.debug(f"Сохранение/обновление данных пользователя {user_id} ({platform})")
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
+    # Извлекаем значения из словаря. Если ключа нет в словаре data,
+    # мы передаем None, чтобы SQLite знала, что это поле обновлять не нужно.
+    username = data.get("username")
+    full_name = data.get("full_name")
+    score = data.get("score")
+    xp = data.get("xp")
+    streak = data.get("streak")
+    target = data.get("target")
+    timezone = data.get("timezone")
+    last_solved_date = data.get("last_solved_date")
+    notifications_enabled = data.get("notifications_enabled")
+
+    # В блоке VALUES мы вставляем дефолтные значения (score=40, target=80, notifications_enabled=1),
+    # если запись создается впервые.
+    # В блоке ON CONFLICT (user_id, platform) DO UPDATE SET мы обновляем колонки
+    # только ЕСЛИ нам передали новое значение (используем COALESCE, чтобы не затереть старое значение на None).
     cursor.execute('''
-        INSERT OR REPLACE INTO users 
-        (user_id, platform, username, full_name, score, xp, streak, target, timezone, last_solved_date, notifications_enabled)
+        INSERT INTO users (
+            user_id, platform, username, full_name, score, xp, 
+            streak, target, timezone, last_solved_date, notifications_enabled
+        )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, platform) DO UPDATE SET
+            username = COALESCE(?, username),
+            full_name = COALESCE(?, full_name),
+            score = COALESCE(?, score),
+            xp = COALESCE(?, xp),
+            streak = COALESCE(?, streak),
+            target = COALESCE(?, target),
+            timezone = COALESCE(?, timezone),
+            last_solved_date = COALESCE(?, last_solved_date),
+            notifications_enabled = COALESCE(?, notifications_enabled)
     ''', (
-        user_id,
-        platform,
-        data.get("username"),
-        data.get("full_name"),
-        data.get("score", 40),
-        data.get("xp", 0),
-        data.get("streak", 0),
-        data.get("target", 80),
-        data.get("timezone"),
-        data.get("last_solved_date"),
-        data.get("notifications_enabled", 1)  # Записываем значение флага (по умолчанию 1)
+        # Блок INSERT (VALUES)
+        user_id, platform, username, full_name,
+        score if score is not None else 40,
+        xp if xp is not None else 0,
+        streak if streak is not None else 0,
+        target if target is not None else 80,
+        timezone, last_solved_date,
+        notifications_enabled if notifications_enabled is not None else 1,
+
+        # Блок UPDATE (DO UPDATE SET) — связывается с COALESCE(?, column_name)
+        username, full_name, score, xp, streak, target, timezone, last_solved_date, notifications_enabled
     ))
+
     conn.commit()
     conn.close()
+    logger.debug(f"Данные пользователя {user_id} ({platform}) успешно сохранены/обновлены через UPSERT.")
 
 
 def get_all_users_for_notify():
@@ -114,35 +148,3 @@ def get_all_users_for_notify():
     rows = cursor.fetchall()
     conn.close()
     return rows
-
-
-def disable_notifications(user_id: int, platform: str = "tg") -> bool:
-    """
-    Мягко отключает рассылку уведомлений для пользователя в БД.
-    Возвращает True в случае успеха и False в случае ошибки.
-    """
-    logger.info(f"Отключение уведомлений для {user_id} ({platform}) в базе данных...")
-    try:
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            UPDATE users 
-            SET notifications_enabled = 0 
-            WHERE user_id = ? AND platform = ?
-        ''', (user_id, platform))
-
-        rows_affected = cursor.rowcount
-        conn.commit()
-        conn.close()
-
-        if rows_affected > 0:
-            logger.info(f"Уведомления для пользователя {user_id} успешно переведены в режим OFF.")
-            return True
-        else:
-            logger.warning(f"Пользователь {user_id} ({platform}) не был найден в БД для изменения статуса уведомлений.")
-            return False
-
-    except Exception as e:
-        logger.error(f"Не удалось выключить уведомления для {user_id} в БД из-за ошибки: {e}")
-        return False
