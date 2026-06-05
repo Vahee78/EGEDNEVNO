@@ -1,3 +1,4 @@
+from random import choice
 from datetime import datetime
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
@@ -8,7 +9,7 @@ import data_content as content
 import keyboards as kb
 import engine
 from data_content import get_streak_congrats
-from handlers.utils import get_random_task, handle_streak_check, ask_gemini
+from handlers.utils import get_task, get_random_task, handle_streak_check, ask_gemini
 from keyboards import get_after_explanation_kb
 
 from loguru import logger
@@ -19,7 +20,7 @@ router = Router()
 active_sessions = {}
 
 
-def format_task_text(q: dict) -> tuple[str, list]:
+def format_task_text(user_id: int, q: dict) -> tuple[str, list]:
     """Адаптивное форматирование текста задания"""
     is_text_type = "answer_variants" in q and q["answer_variants"]
 
@@ -35,11 +36,12 @@ def format_task_text(q: dict) -> tuple[str, list]:
         option_numbers = []
         footer = "⌨️ *Напиши ответ сообщением:* "
 
-    text = f"📝 *Задание №{q['type']}*\n\n{q['instruction']}\n\n{options_text}{footer}"
+    emoji = "📝" if not db.is_favourite(user_id, q['id']) else "⭐"
+    text = f"{emoji} *Задание №{q['type']}*\n\n{q['instruction']}\n\n{options_text}{footer}"
     return text, option_numbers
 
 
-async def start_new_task(user_id: int, message_or_call) -> None:
+async def start_new_task(user_id: int, message_or_call, type="def") -> None:
     """Универсальная функция запуска задания (для команды и для кнопки)"""
     trigger_type = "CALLBACK" if isinstance(message_or_call, CallbackQuery) else "COMMAND"
     logger.info(f"Запуск нового задания для пользователя {user_id} через {trigger_type}")
@@ -53,7 +55,11 @@ async def start_new_task(user_id: int, message_or_call) -> None:
         else:
             await message_or_call.answer(msg_text, parse_mode="Markdown")
 
-    q = get_random_task()
+    if type == "fav":
+        q = get_task(choice(db.get_user_favourites(user_id)))
+    else:
+        q = get_random_task()
+
     if not q:
         logger.error(f"Ошибка при получении задания из БД для {user_id} — база пуста или недоступна")
         msg = "Задания временно недоступны."
@@ -67,7 +73,7 @@ async def start_new_task(user_id: int, message_or_call) -> None:
     active_sessions[user_id] = {"task_data": q, "selected": [], "state": "solving"}
     logger.debug(f"Сессия создана для {user_id}. ID задания: {q['id']}, тип: {q['type']}")
 
-    text, option_numbers = format_task_text(q)
+    text, option_numbers = format_task_text(user_id, q)
 
     # Если это текстовое задание, клавиатура будет пустой или содержать только тех. кнопки
     is_text_type = "answer_variants" in q and q["answer_variants"]
@@ -156,10 +162,11 @@ async def cmd_bot(message: Message):
     await start_new_task(message.from_user.id, message)
 
 
-@router.callback_query(F.data == "play")
+@router.callback_query(F.data.startswith("play_"))
 async def send_question_callback(callback: CallbackQuery):
     logger.info(f"Клик на кнопку 'play' от {callback.from_user.id}")
-    await start_new_task(callback.from_user.id, callback)
+    type_of_task = callback.data.split("_")[1]
+    await start_new_task(callback.from_user.id, callback, type_of_task)
 
 
 @router.callback_query(F.data.startswith("fav_"))
@@ -283,7 +290,8 @@ async def submit_answer(callback: CallbackQuery):
     db.update_user_data(user_id, user)
     logger.debug(f"БД обновлена для {user_id}. Старый балл: {old_score} -> Новый балл: {user['score']}")
 
-    await callback.message.edit_text(res_text, reply_markup=kb.get_post_answer_kb(q_id, user_id=user_id), parse_mode="Markdown")
+    await callback.message.edit_text(res_text, reply_markup=kb.get_post_answer_kb(q_id, user_id=user_id),
+                                     parse_mode="Markdown")
 
     if user["score"] > old_score and old_league["name"] != new_league["name"]:
         logger.info(f"Пользователь {user_id} перешел в новую лигу: {new_league['name']}!")
@@ -343,10 +351,10 @@ async def explain_gemini(callback: CallbackQuery):
         logger.info(f"Разбор от Gemini успешно получен для {user_id}. Длина текста: {len(explanation)}")
 
         if "⚠️" in explanation:
-            reply_markup = get_after_explanation_kb(q_id)
+            reply_markup = get_after_explanation_kb(q_id, user_id)
             logger.warning(f"ИИ вернул предупреждение во время генерации разбора для {user_id}")
         else:
-            reply_markup = get_after_explanation_kb()
+            reply_markup = get_after_explanation_kb(None, user_id)
             # Очищаем сессию, так как задание полностью разобрано
             active_sessions.pop(user_id, None)
             logger.debug(f"Сессия пользователя {user_id} удалена после успешного объяснения.")
@@ -355,5 +363,5 @@ async def explain_gemini(callback: CallbackQuery):
                                       parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Исключение при генерации разбора ИИ для {user_id}: {e}", exc_info=True)
-        reply_markup = get_after_explanation_kb(q_id)
+        reply_markup = get_after_explanation_kb(q_id, user_id)
         await callback.message.answer("⚠️ Ошибка разбора.", reply_markup=reply_markup, parse_mode="Markdown")

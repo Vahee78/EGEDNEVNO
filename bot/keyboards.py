@@ -12,7 +12,8 @@ def get_settings_kb():
 
 def get_main_menu_kb():
     builder = InlineKeyboardBuilder()
-    builder.button(text="📝 Решать задания", callback_data="play")
+    builder.button(text="📝 Решать задания", callback_data="play_def")
+    builder.button(text="⭐ Решать избранное", callback_data="play_fav")
     builder.button(text="🏆 Моя лига", callback_data="my_league")
     builder.adjust(1)
     return builder.as_markup()
@@ -39,7 +40,7 @@ def get_post_answer_kb(q_id: int, user_id: int):
     builder.button(text="✨ Умный разбор от ИИ", callback_data=f"explain_{q_id}")
     builder.button(text="🗑️ Удалить из избранного" if db.is_favourite(user_id, q_id)
                    else "⭐ Добавить в избранное", callback_data=f"fav_{q_id}")
-    builder.button(text="➡️ Следующее задание", callback_data="play")
+    builder.button(text="➡️ Следующее задание", callback_data="play_def")
     builder.button(text="🏠 В меню", callback_data="menu")
     builder.adjust(1)
     return builder.as_markup()
@@ -62,10 +63,12 @@ def get_tz_kb():
     return builder.as_markup()
 
 
-def get_after_explanation_kb(q_id=None):
+def get_after_explanation_kb(q_id, user_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="🔄️ Попробовать снова", callback_data=f"explain_{q_id}") if q_id else None
-    builder.button(text="➡️ Решать еще", callback_data="play")
+    builder.button(text="🗑️ Удалить из избранного" if db.is_favourite(user_id, q_id)
+                   else "⭐ Добавить в избранное", callback_data=f"fav_{q_id}")
+    builder.button(text="➡️ Решать еще", callback_data="play_def")
     builder.button(text="🏠 Меню", callback_data="menu")
     builder.adjust(1)
     return builder.as_markup()

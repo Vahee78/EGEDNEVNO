@@ -49,6 +49,34 @@ def get_random_task():
         return None
 
 
+def get_task(task_id) -> dict | None:
+    """Ищет задание по ID во всех файлах папки tasks/"""
+    tasks_dir = "tasks"
+    target_id = str(task_id).strip()
+
+    # Сканируем папку с файлами задач
+    for filename in os.listdir(tasks_dir):
+        if filename.startswith("task_") and filename.endswith(".json"):
+            try:
+                with open(os.path.join(tasks_dir, filename), 'r', encoding='utf-8') as f:
+                    tasks = json.load(f)
+
+                # Ищем задачу с нужным ID
+                for task in tasks:
+                    if str(task.get("id")).strip() == target_id:
+                        task["type"] = filename.split('_')[1].split('.')[0]
+                        if task["type"] == "4":
+                            task["instruction"] = (
+                                "Укажите варианты ответов, в которых верно выделена буква, "
+                                "обозначающая ударный гласный звук. Запишите номера ответов."
+                            )
+                        return task
+            except Exception:
+                continue
+
+    return None
+
+
 def handle_streak_check(user_id: int) -> int:
     """Централизованная проверка стрика с защитой от бесконечного списания."""
     user = db.get_user_data(user_id)
