@@ -142,7 +142,7 @@ async def handle_text_answer(message: Message):
     # Меняем стейт, чтобы не спамить ответами
     session["state"] = "after_solve"
 
-    await message.answer(res_text, reply_markup=kb.get_post_answer_kb(q["id"]), parse_mode="Markdown")
+    await message.answer(res_text, reply_markup=kb.get_post_answer_kb(q["id"], user_id=user_id), parse_mode="Markdown")
 
     if user["score"] > old_score and old_league["name"] != new_league["name"]:
         logger.info(f"Пользователь {user_id} перешел в новую лигу: {new_league['name']}!")
@@ -160,6 +160,28 @@ async def cmd_bot(message: Message):
 async def send_question_callback(callback: CallbackQuery):
     logger.info(f"Клик на кнопку 'play' от {callback.from_user.id}")
     await start_new_task(callback.from_user.id, callback)
+
+
+@router.callback_query(F.data.startswith("fav_"))
+async def handle_toggle_favorite(callback: CallbackQuery):
+    user_id = callback.from_user.id
+
+    # Парсим callback_data. Она может быть "fav_16" или "fav_16_post" (после ответа)
+    data_parts = callback.data.split("_")
+    question_id = int(data_parts[1])
+
+    # Меняем статус в базе данных (если было — удалит, если не было — добавит)
+    # Функция toggle_favorite возвращает True (добавлено) или False (удалено)
+    is_added = db.toggle_favourite(user_id, question_id, platform="tg")
+
+    # Всплывающее уведомление сверху экрана Telegram
+    if is_added:
+        await callback.answer("⭐ Задание добавлено в избранное!")
+    else:
+        await callback.answer("🗑️ Задание удалено из избранного.")
+
+    # Обновляем клавиатуру текущего сообщения
+    await callback.message.edit_reply_markup(reply_markup=kb.get_post_answer_kb(question_id, user_id=user_id))
 
 
 @router.callback_query(F.data.startswith("toggle_"))
@@ -261,7 +283,7 @@ async def submit_answer(callback: CallbackQuery):
     db.update_user_data(user_id, user)
     logger.debug(f"БД обновлена для {user_id}. Старый балл: {old_score} -> Новый балл: {user['score']}")
 
-    await callback.message.edit_text(res_text, reply_markup=kb.get_post_answer_kb(q_id), parse_mode="Markdown")
+    await callback.message.edit_text(res_text, reply_markup=kb.get_post_answer_kb(q_id, user_id=user_id), parse_mode="Markdown")
 
     if user["score"] > old_score and old_league["name"] != new_league["name"]:
         logger.info(f"Пользователь {user_id} перешел в новую лигу: {new_league['name']}!")
