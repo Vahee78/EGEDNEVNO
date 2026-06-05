@@ -27,6 +27,7 @@ def do_ege_ost(days:int) -> str:
         return f"{emoji}До ЕГЭ остался {days} день"
     return f"{emoji}До ЕГЭ осталось {days} дней"
 
+
 def get_random_task():
     """Выбирает случайное задание из папки tasks/"""
     try:
@@ -72,7 +73,7 @@ def get_menu_text(user_id: int) -> str:
 
     reset_msg = f"\n\n⚠️ *Ваш стрик сгорел!* -{was_reset} XP" if was_reset else ""
 
-    ege_date = date(2026, 6, 4)
+    ege_date = date(2027, 6, 1)
     today = date.today()
 
     return (
