@@ -1,18 +1,22 @@
 import random
 
 
-# Система Лиг
-def get_league(score: int):
-    if score < 60:
-        return {"name": "Бронзовая лига", "desc": "Платное обучение", "icon": "🥉", "next": 60}
-    elif score < 70:
-        return {"name": "Серебряная лига", "desc": "Регионы (УрФУ, НГУ, КФУ)", "icon": "🥈", "next": 70}
-    elif score < 80:
-        return {"name": "Золотая лига", "desc": "Золотой стандарт (МИРЭА, МИСиС, ЛЭТИ)", "icon": "🥇", "next": 80}
-    elif score < 90:
-        return {"name": "Алмазная лига", "desc": "Топ-вузы (Бауманка, МИФИ, СПбПУ)", "icon": "💎", "next": 90}
-    else:
-        return {"name": "Платиновая лига", "desc": "Элита (МФТИ, ВШЭ, ИТМО)", "icon": "🛸", "next": 101}
+def render_menu_text(data: dict) -> str:
+    """Превращает сырые данные ядра в красивый текст для Телеграма"""
+    status = "✅ Решено" if data["is_solved_today"] else "❌ Не решено"
+
+    reset_msg = ""
+
+    days_msg = do_ege_ost(data["days_left"])
+
+    return (
+        f"📊 *Ваша статистика:*\n\n"
+        f"{data['league_icon']} Лига: {data['league_name']} ({data['league_desc']})\n"
+        f"🎯 Цель: {data['target']} | 🏆 Балл: {data['score']}\n"
+        f"{data['streak_icon']} Стрик: {data['streak']} | 🛤 XP: {data['xp']}/{data['max_xp']}\n"
+        f"📅 Сегодня: {status}{reset_msg}\n\n"
+        f"{days_msg}"
+    )
 
 
 def get_streak_congrats(streak: int):
@@ -78,3 +82,19 @@ DUO_QUOTES = {
             "😡 Ты же не забыл про меня, ДА!?",
         ]
 }
+
+
+def do_ege_ost(days: int) -> str:
+    emoji = "⏳"
+    if days <= 0:
+        return ("Да пребудет с вами благодать на испытании Едином! Да будет текст ясен как слово пророка, "
+                "а тема для сочинения — легка, как перышко. Да не встретится вам в задании третьем гробов, "
+                "что вводят в страх; да будут в четвертом лишь ударения, ведомые сердцу, а в слове вашем — "
+                "полнота логики и связности, дабы получить награду великую. "
+                "Ибо сказано: «Не бойся, ибо Я с тобою» (Исаия 43:5).\n\n"
+                "Воздохните духом глубоко и выдохните тревогу, ибо вы всё напишете! 🍀")
+    if not (11 <= days % 100 <= 14) and (1 < days % 10 < 5):
+        return f"{emoji}До ЕГЭ осталось {days} дня"
+    if days % 10 == 1:
+        return f"{emoji}До ЕГЭ остался {days} день"
+    return f"{emoji}До ЕГЭ осталось {days} дней"

@@ -1,5 +1,71 @@
+import os
+import random
+import json
+from loguru import logger
 from datetime import datetime
-import data_content as content
+
+
+def get_random_task() -> dict | None:
+    """Выбирает случайное задание из папки tasks/"""
+    try:
+        tasks_dir = "tasks"
+        files = [f for f in os.listdir(tasks_dir) if f.startswith("task_") and f.endswith(".json")]
+        if not files:
+            return None
+
+        chosen_file = random.choice(files)
+        with open(os.path.join(tasks_dir, chosen_file), 'r', encoding='utf-8') as f:
+            tasks_list = json.load(f)
+            task = random.choice(tasks_list)
+            task["type"] = chosen_file.split('_')[1].split('.')[0]
+            if int(task["type"]) == 4:
+                task["instruction"] = "Укажите варианты ответов, в которых верно выделена буква, обозначающая ударный гласный звук. Запишите номера ответов."
+            return task
+    except Exception as e:
+        logger.warning(f"Ошибка загрузки задания: {e}")
+        return None
+
+
+def get_task(task_id) -> dict | None:
+    """Ищет задание по ID во всех файлах папки tasks/"""
+    tasks_dir = "tasks"
+    target_id = str(task_id).strip()
+
+    # Сканируем папку с файлами задач
+    for filename in os.listdir(tasks_dir):
+        if filename.startswith("task_") and filename.endswith(".json"):
+            try:
+                with open(os.path.join(tasks_dir, filename), 'r', encoding='utf-8') as f:
+                    tasks = json.load(f)
+
+                # Ищем задачу с нужным ID
+                for task in tasks:
+                    if str(task.get("id")).strip() == target_id:
+                        task["type"] = filename.split('_')[1].split('.')[0]
+                        if task["type"] == "4":
+                            task["instruction"] = (
+                                "Укажите варианты ответов, в которых верно выделена буква, "
+                                "обозначающая ударный гласный звук. Запишите номера ответов."
+                            )
+                        return task
+            except Exception:
+                continue
+
+    return None
+
+
+# Система Лиг
+def get_league(score: int):
+    if score < 60:
+        return {"name": "Бронзовая лига", "desc": "Платное обучение", "icon": "🥉", "next": 60}
+    elif score < 70:
+        return {"name": "Серебряная лига", "desc": "Регионы (УрФУ, НГУ, КФУ)", "icon": "🥈", "next": 70}
+    elif score < 80:
+        return {"name": "Золотая лига", "desc": "Золотой стандарт (МИРЭА, МИСиС, ЛЭТИ)", "icon": "🥇", "next": 80}
+    elif score < 90:
+        return {"name": "Алмазная лига", "desc": "Топ-вузы (Бауманка, МИФИ, СПбПУ)", "icon": "💎", "next": 90}
+    else:
+        return {"name": "Платиновая лига", "desc": "Элита (МФТИ, ВШЭ, ИТМО)", "icon": "🛸", "next": 101}
 
 
 def get_max_xp(score: int) -> int:
