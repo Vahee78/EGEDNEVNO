@@ -8,9 +8,7 @@ import database as db
 import data_content as content
 import keyboards as kb
 import engine
-from data_content import get_streak_congrats
 from handlers.utils import get_task, get_random_task, handle_streak_check, ask_gemini
-from keyboards import get_after_explanation_kb
 
 from loguru import logger
 
@@ -134,7 +132,7 @@ async def handle_text_answer(message: Message):
             user["streak"] += 1
             user["last_solved_date"] = today_str
             logger.info(f"Стрик пользователя {user_id} увеличен до {user['streak']} дней.")
-            if streak_congrats := get_streak_congrats(user["streak"]):
+            if streak_congrats := content.get_streak_congrats(user["streak"]):
                 res_text = streak_congrats + "\n\n" + res_text
     else:
         engine.remove_user_xp(user, 1)
@@ -276,7 +274,7 @@ async def submit_answer(callback: CallbackQuery):
             user["streak"] += 1
             user["last_solved_date"] = today_str
             logger.info(f"Стрик пользователя {user_id} увеличен до {user['streak']} дней.")
-            if streak_congrats := get_streak_congrats(user["streak"]):
+            if streak_congrats := content.get_streak_congrats(user["streak"]):
                 res_text = streak_congrats + "\n\n" + res_text
     else:
         engine.remove_user_xp(user, 1)
@@ -351,10 +349,10 @@ async def explain_gemini(callback: CallbackQuery):
         logger.info(f"Разбор от Gemini успешно получен для {user_id}. Длина текста: {len(explanation)}")
 
         if "⚠️" in explanation:
-            reply_markup = get_after_explanation_kb(q_id, user_id)
+            reply_markup = kb.get_after_explanation_kb(q_id, user_id)
             logger.warning(f"ИИ вернул предупреждение во время генерации разбора для {user_id}")
         else:
-            reply_markup = get_after_explanation_kb(None, user_id)
+            reply_markup = kb.get_after_explanation_kb(None, user_id)
             # Очищаем сессию, так как задание полностью разобрано
             active_sessions.pop(user_id, None)
             logger.debug(f"Сессия пользователя {user_id} удалена после успешного объяснения.")
@@ -363,5 +361,5 @@ async def explain_gemini(callback: CallbackQuery):
                                       parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Исключение при генерации разбора ИИ для {user_id}: {e}", exc_info=True)
-        reply_markup = get_after_explanation_kb(q_id, user_id)
+        reply_markup = kb.get_after_explanation_kb(q_id, user_id)
         await callback.message.answer("⚠️ Ошибка разбора.", reply_markup=reply_markup, parse_mode="Markdown")
