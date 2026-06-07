@@ -14,7 +14,6 @@ def get_main_menu_kb():
     builder = InlineKeyboardBuilder()
     builder.button(text="📝 Решать задания", callback_data="play_def")
     builder.button(text="⭐ Решать избранное", callback_data="play_fav")
-    builder.button(text="🏆 Моя лига", callback_data="my_league")
     builder.adjust(1)
     return builder.as_markup()
 
