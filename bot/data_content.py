@@ -1,6 +1,36 @@
 import random
 
 
+def format_task_text(q: dict, is_favourite: bool) -> tuple[str, list]:
+    """Чистый контент: собирает текст задания со смайликами и маркдауном"""
+    # Если есть список опций (как в задании 16)
+    if "options" in q and q["options"]:
+        options_text = "\n".join([f"{i + 1}. {opt}" for i, opt in enumerate(q['options'])])
+        option_numbers = [str(i + 1) for i in range(len(q['options']))]
+        footer = "\n\n_Выбери правильные варианты (кнопками):_"
+    else:
+        # Для 5, 6, 7 заданий список опций обычно уже вшит в инструкцию или текст
+        q['instruction'] = q['instruction'].replace("\n", "\n\n", 1)
+        options_text = ""
+        option_numbers = []
+        footer = "⌨️ *Напиши ответ сообщением:* "
+
+    emoji = "⭐" if is_favourite else "📝"
+
+    text = f"{emoji} *Задание №{q['type']}*\n\n{q['instruction']}\n\n{options_text}{footer}"
+    return text, option_numbers
+
+
+def get_streak_burn_text(was_reset_xp: int) -> str:
+    """Текст сгорания стрика"""
+    return f"⚠️ *Ваш стрик сгорел за неактивность!* -{was_reset_xp} XP"
+
+
+def get_error_no_tasks_text() -> str:
+    """Текст ошибки отсутствия заданий"""
+    return "Задания временно недоступны."
+
+
 def render_menu_text(data: dict) -> str:
     """Превращает сырые данные ядра в красивый текст для Телеграма"""
     status = "✅ Решено" if data["is_solved_today"] else "❌ Не решено"
