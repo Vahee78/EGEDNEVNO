@@ -20,11 +20,11 @@ async def loop(bot):
                 if pl != 'tg' or last_date == today_str:
                     continue  # Пропускаем не тг юзеров и тех, кто сегодня решал
 
-                l_time = now_utc + timedelta(hours=tz)
+                local_time = now_utc + timedelta(hours=tz)
                 # Проверяем, пора ли отправлять
-                if any(l_time.hour == int(h) and 0 < l_time.minute - (30 if h % 1 != 0 else 0) < 10 for h in content.NOTIFICATION_HOURS):
+                if any(local_time.hour == int(h) and 0 < local_time.minute - (30 if h % 1 != 0 else 0) < 10 for h in content.NOTIFICATION_HOURS):
                     try:
-                        await bot.send_message(u_id, content.get_notification(l_time))
+                        await bot.send_message(u_id, content.get_notification(local_time))
                         logger.info(f"Уведомление отправлено пользователю {u_id}")
                         await asyncio.sleep(0.05)  # Защита от спам-блока Telegram
                     except TelegramForbiddenError:
