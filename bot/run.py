@@ -1,6 +1,6 @@
-import logger
 import database as db
 import bot
+import notifications
 from config import BOT_TOKEN
 
 import asyncio
@@ -17,9 +17,15 @@ async def main():
 
     dp.include_router(bot.router)
 
-    logger.success("🚀 Бэкэнд собран. Запускаем polling...")
+    logger.info("Регистрация фоновой задачи уведомлений...")
+    _ = asyncio.create_task(notifications.loop(tg_bot))
+
+    logger.success("🚀 Бот запущен")
     await dp.start_polling(tg_bot)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.warning("Бот был остановлен вручную.")

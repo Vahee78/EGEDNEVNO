@@ -21,16 +21,6 @@ def format_task_text(q: dict, is_favourite: bool) -> tuple[str, list]:
     return text, option_numbers
 
 
-def get_streak_burn_text(was_reset_xp: int) -> str:
-    """Текст сгорания стрика"""
-    return f"⚠️ *Ваш стрик сгорел за неактивность!* -{was_reset_xp} XP"
-
-
-def get_error_no_tasks_text() -> str:
-    """Текст ошибки отсутствия заданий"""
-    return "Задания временно недоступны."
-
-
 def render_menu_text(data: dict) -> str:
     """Превращает сырые данные ядра в красивый текст для Телеграма"""
     status = "✅ Решено" if data["is_solved_today"] else "❌ Не решено"

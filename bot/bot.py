@@ -22,7 +22,7 @@ async def start_new_task(user_id: int, message_or_call, task_type: str = "def") 
 
     # Обработка ошибки
     if core_result["status"] == "error_empty":
-        msg = data_content.get_error_no_tasks_text()
+        msg = "Задания временно недоступны."
         if isinstance(message_or_call, CallbackQuery):
             await message_or_call.answer(msg)
         await target.answer(msg)
