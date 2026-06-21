@@ -43,6 +43,73 @@ async def start_new_task(user_id: int, message_or_call, task_type: str = "def") 
     await target.answer(text, reply_markup=reply_markup, parse_mode="Markdown")
 
 
+@router.callback_query(F.data.startswith("submit_"))
+async def submit_answer(callback: CallbackQuery):
+    q_id = int(callback.data.split("_")[1])
+    user_id = callback.from_user.id
+
+    # Отправляем на "грязную работу" в core
+    res = core.process_answer_submission(user_id, q_id)
+
+    # Обработка ошибок валидации сессии
+    if res["status"] == "error":
+        if res["reason"] == "already_solved":
+            return await callback.answer("Уже решено.")
+        if res["reason"] == "session_conflict":
+            return await callback.answer("Ошибка сессии.")
+        if res["reason"] == "none_selected":
+            return await callback.answer("Выбери хотя бы один вариант!", show_alert=True)
+
+    # --- Слой отображения: Оформление вариантов ответов ---
+    options_text = ""
+    for i, opt in enumerate(res["options"]):
+        is_selected = i in res["selected"]
+        is_opt_correct = i in res["correct_indexes"]
+
+        line = opt
+        if is_selected:
+            line = f"*{line}*"
+        if is_opt_correct:
+            line += " ✅"
+        elif is_selected:
+            line += " ❌"
+        options_text += f"{i + 1}. {line}\n"
+
+    # --- Слой отображения: Оформление основного текста сообщения ---
+
+    if res["is_correct"]:
+        res_text = f"✅ *Верно!*\n\n{options_text}"
+        if res["new_score"] > res["old_score"]:
+            res_text += f"\n🆙 Новый балл: {res['new_score']}!"
+
+        # Добавляем поздравление со стриком, если он вырос
+        if res["streak_increased"]:
+            if streak_congrats := data_content.get_streak_congrats(res["current_streak"]):
+                res_text = f"{streak_congrats}\n\n{res_text}"
+    else:
+        res_text = f"❌ *Ошибка.*\n\n{options_text}\nШтраф: -1 XP."
+        if res["new_score"] < res["old_score"]:
+            res_text += f"\n📉 Балл упал до {res['new_score']}."
+
+    # Отправляем красиво оформленный ответ
+    await callback.message.edit_text(
+        res_text,
+        reply_markup=kb.get_post_answer_kb(q_id, user_id=user_id),
+        parse_mode="Markdown"
+    )
+
+    # --- Слой отображения: Оформление пуша о новой лиге ---
+    old_league = res["old_league"]
+    new_league = res["new_league"]
+    if res["new_score"] > res["old_score"] and old_league["name"] != new_league["name"]:
+        logger.info(f"Пользователь {user_id} перешел в лигу {new_league['name']}")
+        promo_text = data_content.get_new_league_congrats(old_league, new_league)
+        await callback.message.answer(promo_text, parse_mode="Markdown")
+        pass
+
+    await callback.answer()
+
+
 @router.message(F.text == "/menu")
 async def cmd_menu(message: Message):
     logger.debug(f"Команда /menu от {message.from_user.id}")

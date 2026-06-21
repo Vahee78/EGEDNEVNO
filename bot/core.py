@@ -40,6 +40,69 @@ def prepare_new_task(user_id: int, task_type: str = "def") -> dict:
     }
 
 
+def process_answer_submission(user_id: int, q_id: int) -> dict:
+    """
+    Выполняет всю грязную работу: валидация сессии, расчет правильности,
+    изменение очков/стриков в БД. Возвращает только чистые данные.
+    """
+    session = active_sessions.get(user_id)
+
+    # Валидация состояния сессии
+    if not session or session.get("state") != "solving":
+        return {"status": "error", "reason": "already_solved"}
+
+    if str(session["task_data"]["id"]) != str(q_id):
+        return {"status": "error", "reason": "session_conflict"}
+
+    if not session["selected"]:
+        return {"status": "error", "reason": "none_selected"}
+
+    user = db.get_user_data(user_id)
+    q = session["task_data"]
+
+    # Проверка правильности
+    is_correct = sorted(session["selected"]) == sorted(q["correct_indexes"])
+
+    # Замораживаем стейт сессии от повторных кликов
+    session["state"] = "after_solve"
+
+    # Фиксируем старые значения для сравнения изменений
+    old_score = user["score"]
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    streak_increased = False
+
+    # Геймификация
+    if is_correct:
+        engine.add_user_xp(user, 1)
+        if user["last_solved_date"] != today_str:
+            user["streak"] += 1
+            user["last_solved_date"] = today_str
+            streak_increased = True
+    else:
+        engine.remove_user_xp(user, 1)
+
+    db.update_user_data(user_id, user)
+
+    # Работа с лигами
+    old_league = engine.get_league(old_score)
+    new_league = engine.get_league(user["score"])
+
+    # Возвращаем сухие данные для bot.py
+    return {
+        "status": "success",
+        "is_correct": is_correct,
+        "selected": session["selected"],
+        "correct_indexes": q["correct_indexes"],
+        "options": q["options"],
+        "old_score": old_score,
+        "new_score": user["score"],
+        "current_streak": user["streak"],
+        "streak_increased": streak_increased,
+        "old_league": old_league,
+        "new_league": new_league
+    }
+
+
 def handle_streak_check(user_id: int) -> int:
     """Централизованная проверка стрика с защитой от бесконечного списания."""
     user = db.get_user_data(user_id)
