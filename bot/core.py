@@ -89,7 +89,7 @@ def process_text_answer(user_id: int, user_ans: str):
             f"Игнорируем текстовое сообщение от {user_id}: текущее задание {q['id']} не предусматривает текстовый ввод")
         return {"status": "error"}
 
-    # Обработка ввода
+    # Проверка правильности
     correct_variants = [v.lower().strip() for v in q["answer_variants"]]
     is_correct = user_ans in correct_variants
 
@@ -103,9 +103,6 @@ def process_text_answer(user_id: int, user_ans: str):
     old_score = user["score"]
     today_str = datetime.now().strftime("%Y-%m-%d")
     streak_increased = False
-
-    # Проверка правильности
-    is_correct = sorted(session["selected"]) == sorted(q["correct_indexes"])
 
     # Геймификация
     if is_correct:
