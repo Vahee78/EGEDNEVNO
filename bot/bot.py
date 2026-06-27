@@ -201,6 +201,7 @@ async def cb_menu(callback: CallbackQuery):
     menu_data = core.get_menu_data(callback.from_user.id)
     text = data_content.render_menu_text(menu_data)
     await callback.message.answer(text, reply_markup=kb.get_main_menu_kb(), parse_mode="Markdown")
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("play_"))
@@ -242,7 +243,4 @@ async def settings_callbacks(callback: CallbackQuery):
 
     update_user_data(callback.from_user.id, user)
     await callback.answer(msg, show_alert=True)
-    menu_data = core.get_menu_data(callback.from_user.id)
-    text = data_content.render_menu_text(menu_data)
-    await callback.message.edit_text(text, reply_markup=kb.get_main_menu_kb(),
-                                     parse_mode="Markdown")
+    await callback.message.edit_text("⚙️ Настройки:", reply_markup=kb.get_settings_kb(), parse_mode="Markdown")

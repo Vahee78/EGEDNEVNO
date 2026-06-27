@@ -42,16 +42,10 @@ def prepare_new_task(user_id: int, task_type: str = "def") -> dict:
 
 def toggle_option(user_id: int, q_id: str, opt_idx: int):
     session = active_sessions.get(user_id)
-    if not session:
+    if not session or session.get("state") != "solving" or str(session["task_data"]["id"]) != q_id:
         q = engine.get_task(q_id)
         session = active_sessions[user_id] = {"task_data": q, "selected": [], "state": "solving"}
-        logger.info(f"Попытка переключения кнопок пользователем {user_id} без активной сессии.\n"
-                    f"Сессия создана. ID задания: {q_id}")
-
-    if session.get("state") != "solving" or str(session["task_data"]["id"]) != q_id:
-        logger.warning(
-            f"Устаревший клик toggle от {user_id}. Стейт: {session.get('state')}, ID в сессии: {session['task_data']['id']}, Получен: {q_id}")
-        return {"status": "error"}
+        logger.info(f"Переключение {user_id} на задачу {q["id"]}\n")
 
     if opt_idx in session["selected"]:
         session["selected"].remove(opt_idx)

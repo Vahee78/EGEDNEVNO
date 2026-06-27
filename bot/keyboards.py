@@ -6,6 +6,7 @@ def get_settings_kb():
     builder = InlineKeyboardBuilder()
     builder.button(text="🎯 Изменить цель", callback_data="change_target")
     builder.button(text="🕒 Сменить часовой пояс", callback_data="change_tz")
+    builder.button(text="🏠 В меню", callback_data="menu")
     builder.adjust(1)
     return builder.as_markup()
 
