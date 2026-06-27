@@ -61,12 +61,85 @@ def toggle_option(user_id: int, q_id: str, opt_idx: int):
         logger.debug(f"Юзер {user_id} выбрал вариант {opt_idx + 1}. Текущий выбор: {session['selected']}")
 
     option_numbers = [str(i + 1) for i in range(len(session["task_data"]["options"]))]
-    print(option_numbers)
 
     return {
         "status": "success",
         "option_numbers": option_numbers,
         "selected": session["selected"]
+    }
+
+
+def process_text_answer(user_id: int, user_ans: str):
+
+    session = active_sessions.get(user_id)
+
+    # Проверяем, что пользователь действительно решает текстовое задание
+    if not session:
+        logger.debug(f"Игнорируем текстовое сообщение от {user_id}: активная сессия отсутствует")
+        return {"status": "error"}
+
+    if session.get("state") != "solving":
+        logger.debug(
+            f"Игнорируем текстовое сообщение от {user_id}: стейт сессии не 'solving' (текущий: '{session.get('state')}')")
+        return {"status": "error"}
+
+    q = session["task_data"]
+    if "answer_variants" not in q or not q["answer_variants"]:
+        logger.debug(
+            f"Игнорируем текстовое сообщение от {user_id}: текущее задание {q['id']} не предусматривает текстовый ввод")
+        return {"status": "error"}
+
+    # Обработка ввода
+    correct_variants = [v.lower().strip() for v in q["answer_variants"]]
+    is_correct = user_ans in correct_variants
+
+    logger.info(
+        f"Пользователь {user_id} ответил текстом на задание {q['id']}. Ввод: '{user_ans}' | "
+        f"Ожидалось: {correct_variants} | Результат: {is_correct}")
+
+    user = db.get_user_data(user_id)
+
+    # Фиксируем старые значения для сравнения изменений
+    old_score = user["score"]
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    streak_increased = False
+
+    # Проверка правильности
+    is_correct = sorted(session["selected"]) == sorted(q["correct_indexes"])
+
+    # Геймификация
+    if is_correct:
+        engine.add_user_xp(user, 1)
+        if user["last_solved_date"] != today_str:
+            user["streak"] += 1
+            user["last_solved_date"] = today_str
+            logger.info(f"Стрик пользователя {user_id} увеличен до {user['streak']} дней.")
+            streak_increased = True
+    else:
+        engine.remove_user_xp(user, 1)
+
+    db.update_user_data(user_id, user)
+    logger.debug(f"БД обновлена для {user_id}. Старый балл: {old_score} -> Новый балл: {user['score']}")
+
+    # Работа с лигами
+    old_league = engine.get_league(old_score)
+    new_league = engine.get_league(user["score"])
+
+    # Меняем стейт, чтобы не спамить ответами
+    session["state"] = "after_solve"
+
+    return {
+        "status": "success",
+        "is_correct": is_correct,
+        "selected": session["selected"],
+        "answer_variants": q["answer_variants"],
+        "id": q["id"],
+        "old_score": old_score,
+        "new_score": user["score"],
+        "current_streak": user["streak"],
+        "streak_increased": streak_increased,
+        "old_league": old_league,
+        "new_league": new_league
     }
 
 

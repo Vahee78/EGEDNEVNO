@@ -49,7 +49,6 @@ async def cb_toggle_option(callback: CallbackQuery):
     _, q_id, opt_idx = callback.data.split("_")
     opt_idx = int(opt_idx)
     user_id = callback.from_user.id
-    print(user_id, q_id, opt_idx)
     res = core.toggle_option(user_id, q_id, opt_idx)
 
     if res["status"] != "error":
@@ -59,6 +58,45 @@ async def cb_toggle_option(callback: CallbackQuery):
         await callback.answer()
     else:
         await callback.answer("Задание завершено или устарело.")
+
+
+# --- ХЕНДЛЕР: ОБРАБОТКА ТЕКСТОВОГО ОТВЕТА (5, 6, 7 задания) ---
+@router.message(F.text, ~F.text.startswith("/"))
+async def handle_text_answer(message: Message):
+    user_id = message.from_user.id
+    user_ans = message.text.lower().strip().translate(str.maketrans('', '', '.,!?'))
+    res = core.process_text_answer(user_id, user_ans)
+
+    if res["status"] == "error":
+        return
+
+    # --- Слой отображения: Оформление основного текста сообщения ---
+
+    correct_ans = " / ".join(res["answer_variants"])
+    if res["is_correct"]:
+        res_text = f"✅ *Верно!*\nОтвет: `{correct_ans}`"
+        if res["new_score"] > res["old_score"]:
+            res_text += f"\n🆙 Новый балл: {res['new_score']}!"
+
+        # Добавляем поздравление со стриком, если он вырос
+        if res["streak_increased"]:
+            if streak_congrats := data_content.get_streak_congrats(res["current_streak"]):
+                res_text = f"{streak_congrats}\n\n{res_text}"
+    else:
+        res_text = f"❌ *Ошибка.*\n\nВаш ответ: `{user_ans}`\nПравильный: `{correct_ans}`\n\nШтраф: -1 XP."
+        if res["new_score"] < res["old_score"]:
+            res_text += f"\n📉 Балл упал до {res['new_score']}."
+
+
+    await message.answer(res_text, reply_markup=kb.get_post_answer_kb(res["id"], user_id=user_id), parse_mode="Markdown")
+
+    # --- Оформление пуша о новой лиге ---
+    old_league = res["old_league"]
+    new_league = res["new_league"]
+    if res["new_score"] > res["old_score"] and old_league["name"] != new_league["name"]:
+        logger.info(f"Пользователь {user_id} перешел в лигу {new_league['name']}")
+        promo_text = data_content.get_new_league_congrats(old_league, new_league)
+        await message.answer(promo_text, parse_mode="Markdown")
 
 
 @router.callback_query(F.data.startswith("submit_"))
@@ -123,7 +161,6 @@ async def cb_submit_answer(callback: CallbackQuery):
         logger.info(f"Пользователь {user_id} перешел в лигу {new_league['name']}")
         promo_text = data_content.get_new_league_congrats(old_league, new_league)
         await callback.message.answer(promo_text, parse_mode="Markdown")
-        pass
 
     await callback.answer()
 
@@ -142,9 +179,17 @@ async def cmd_bot(message: Message):
     await start_new_task(message.from_user.id, message)
 
 
+@router.callback_query(F.data == "menu")
+async def cb_menu(callback: CallbackQuery):
+    logger.debug(f"Callback 'menu' от {callback.message.from_user.id}")
+    menu_data = core.get_menu_data(callback.message.from_user.id)
+    text = data_content.render_menu_text(menu_data)
+    await callback.message.answer(text, reply_markup=kb.get_main_menu_kb(), parse_mode="Markdown")
+
+
 @router.callback_query(F.data.startswith("play_"))
 async def cb_send_question(callback: CallbackQuery):
-    logger.info(f"Клик на кнопку 'play' от {callback.from_user.id}")
+    logger.info(f"Callback 'play' от {callback.from_user.id}")
     type_of_task = callback.data.split("_")[1]
     await start_new_task(callback.from_user.id, callback, type_of_task)
 
