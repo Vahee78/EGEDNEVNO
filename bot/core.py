@@ -113,10 +113,13 @@ def process_text_answer(user_id: int, user_ans: str):
         if user["last_solved_date"] != today_str:
             user["streak"] += 1
             user["last_solved_date"] = today_str
-            logger.info(f"Стрик пользователя {user_id} увеличен до {user['streak']} дней.")
             streak_increased = True
+            logger.info(f"Стрик пользователя {user_id} увеличен до {user['streak']} дней.")
     else:
         engine.remove_user_xp(user, 1)
+
+    # Работа с БД
+    db.log_user_answer(user_id, q["id"], is_correct)
 
     db.update_user_data(user_id, user)
     logger.debug(f"БД обновлена для {user_id}. Старый балл: {old_score} -> Новый балл: {user['score']}")
@@ -181,10 +184,15 @@ def process_answer_submission(user_id: int, q_id: int) -> dict:
             user["streak"] += 1
             user["last_solved_date"] = today_str
             streak_increased = True
+            logger.info(f"Стрик пользователя {user_id} увеличен до {user['streak']} дней.")
     else:
         engine.remove_user_xp(user, 1)
 
+    # Работа с БД
+    db.log_user_answer(user_id, q["id"], is_correct)
+
     db.update_user_data(user_id, user)
+    logger.debug(f"БД обновлена для {user_id}. Старый балл: {old_score} -> Новый балл: {user['score']}")
 
     # Работа с лигами
     old_league = engine.get_league(old_score)
@@ -242,3 +250,11 @@ def get_menu_data(user_id: int):
         "is_solved_today": is_solved_today,
         "days_left": days_left
     }
+
+
+def update_user_names(user_id, username, full_name):
+    user = db.get_user_data(user_id)
+    user["username"] = username
+    user["full_name"] = full_name
+    db.update_user_data(user_id, user)
+    return user

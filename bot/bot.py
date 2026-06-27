@@ -1,7 +1,7 @@
 from loguru import logger
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandStart
 
 import data_content
 import core
@@ -163,6 +163,20 @@ async def cb_submit_answer(callback: CallbackQuery):
         await callback.message.answer(promo_text, parse_mode="Markdown")
 
     await callback.answer()
+
+
+@router.message(CommandStart())
+async def cmd_start(message: Message):
+    user = core.update_user_names(message.from_user.id, message.from_user.username, message.from_user.full_name)
+
+    await message.answer(f"👋 Привет, {message.from_user.first_name}! Бот активирован!")
+
+    if user["timezone"] is None:
+        await message.answer("Выберите свой часовой пояс (МСК = UTC+3):", reply_markup=kb.get_tz_kb())
+    else:
+        menu_data = core.get_menu_data(message.from_user.id)
+        text = data_content.render_menu_text(menu_data)
+        await message.answer(text, reply_markup=kb.get_main_menu_kb(), parse_mode="Markdown")
 
 
 @router.message(Command("menu"))
