@@ -241,11 +241,3 @@ def get_menu_data(user_id: int):
         "is_solved_today": is_solved_today,
         "days_left": days_left
     }
-
-
-def update_user_names(user_id, username, full_name):
-    user = db.get_user_data(user_id)
-    user["username"] = username
-    user["full_name"] = full_name
-    db.update_user_data(user_id, user)
-    return user

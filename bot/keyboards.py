@@ -35,9 +35,9 @@ def get_question_kb(q_id: int, options: list, selected_indices: list = None):
     return builder.as_markup()
 
 
-def get_post_answer_kb(q_id: int, user_id: int):
+def get_post_answer_kb(q_id: int, user_id: int, is_correct: bool):
     builder = InlineKeyboardBuilder()
-    builder.button(text="✨ Умный разбор от ИИ", callback_data=f"explain_{q_id}")
+    builder.button(text="✨ Умный разбор от ИИ", callback_data=f"explain_{q_id}") if is_correct else None
     builder.button(text="🗑️ Удалить из избранного" if db.is_favourite(user_id, q_id)
                    else "⭐ Добавить в избранное", callback_data=f"fav_{q_id}")
     builder.button(text="➡️ Следующее задание", callback_data="play_def")

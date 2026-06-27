@@ -89,7 +89,7 @@ async def handle_text_answer(message: Message):
             res_text += f"\n📉 Балл упал до {res['new_score']}."
 
 
-    await message.answer(res_text, reply_markup=kb.get_post_answer_kb(res["id"], user_id=user_id), parse_mode="Markdown")
+    await message.answer(res_text, reply_markup=kb.get_post_answer_kb(res["id"], user_id, res["is_correct"]), parse_mode="Markdown")
 
     # --- Оформление пуша о новой лиге ---
     old_league = res["old_league"]
@@ -152,7 +152,7 @@ async def cb_submit_answer(callback: CallbackQuery):
     # Отправляем красиво оформленный ответ
     await callback.message.edit_text(
         res_text,
-        reply_markup=kb.get_post_answer_kb(q_id, user_id=user_id),
+        reply_markup=kb.get_post_answer_kb(q_id, user_id, res["is_correct"]),
         parse_mode="Markdown"
     )
 
@@ -169,7 +169,11 @@ async def cb_submit_answer(callback: CallbackQuery):
 
 @router.message(CommandStart())
 async def cmd_start(message: Message):
-    user = core.update_user_names(message.from_user.id, message.from_user.username, message.from_user.full_name)
+    user = get_user_data(message.from_user.id)
+    user["username"] = message.from_user.username
+    user["full_name"] = message.from_user.full_name
+    user["notifications_enabled"] = 1
+    update_user_data(message.from_user.id, user)
 
     await message.answer(f"👋 Привет, {message.from_user.first_name}! Бот активирован!")
 
