@@ -3,6 +3,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command, CommandStart
 
+from database import get_user_data, update_user_data
 import data_content
 import core
 import keyboards as kb
@@ -99,6 +100,7 @@ async def handle_text_answer(message: Message):
         await message.answer(promo_text, parse_mode="Markdown")
 
 
+# --- ОБРАБОТКА ОТВЕТА (с вариантами) ---
 @router.callback_query(F.data.startswith("submit_"))
 async def cb_submit_answer(callback: CallbackQuery):
     q_id = int(callback.data.split("_")[1])
@@ -207,3 +209,40 @@ async def cb_send_question(callback: CallbackQuery):
     type_of_task = callback.data.split("_")[1]
     await start_new_task(callback.from_user.id, callback, type_of_task)
 
+
+# ==========================================
+# НАСТРОЙКИ
+# ==========================================
+
+
+@router.message(Command("settings"))
+async def cmd_settings(message: Message):
+    await message.answer("⚙️ Настройки:", reply_markup=kb.get_settings_kb(), parse_mode="Markdown")
+
+
+@router.callback_query(F.data == "change_target")
+async def show_menu(callback: CallbackQuery):
+    await callback.message.edit_text("Выберите желаемый балл на ЕГЭ:", reply_markup=kb.get_targets_kb())
+
+
+@router.callback_query(F.data == "change_tz")
+async def show_menu(callback: CallbackQuery):
+    await callback.message.edit_text("Выберите часовой пояс:", reply_markup=kb.get_tz_kb())
+
+
+@router.callback_query(F.data.startswith(("reg_tz_", "set_target_")))
+async def settings_callbacks(callback: CallbackQuery):
+    user = get_user_data(callback.from_user.id)
+    if callback.data.startswith("reg_tz_"):
+        user["timezone"] = int(callback.data.split("_")[2])
+        msg = "Часовой пояс сохранен!"
+    else:
+        user["target"] = int(callback.data.split("_")[2])
+        msg = f"Цель изменена на {user['target']}!"
+
+    update_user_data(callback.from_user.id, user)
+    await callback.answer(msg, show_alert=True)
+    menu_data = core.get_menu_data(callback.from_user.id)
+    text = data_content.render_menu_text(menu_data)
+    await callback.message.edit_text(text, reply_markup=kb.get_main_menu_kb(),
+                                     parse_mode="Markdown")
