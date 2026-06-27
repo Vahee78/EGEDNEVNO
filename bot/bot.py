@@ -1,6 +1,7 @@
 from loguru import logger
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
+from aiogram.filters import Command
 
 import data_content
 import core
@@ -43,8 +44,25 @@ async def start_new_task(user_id: int, message_or_call, task_type: str = "def") 
     await target.answer(text, reply_markup=reply_markup, parse_mode="Markdown")
 
 
+@router.callback_query(F.data.startswith("toggle_"))
+async def cb_toggle_option(callback: CallbackQuery):
+    _, q_id, opt_idx = callback.data.split("_")
+    opt_idx = int(opt_idx)
+    user_id = callback.from_user.id
+    print(user_id, q_id, opt_idx)
+    res = core.toggle_option(user_id, q_id, opt_idx)
+
+    if res["status"] != "error":
+        await callback.message.edit_reply_markup(
+            reply_markup=kb.get_question_kb(int(q_id), res["option_numbers"], res["selected"])
+        )
+        await callback.answer()
+    else:
+        await callback.answer("Задание завершено или устарело.")
+
+
 @router.callback_query(F.data.startswith("submit_"))
-async def submit_answer(callback: CallbackQuery):
+async def cb_submit_answer(callback: CallbackQuery):
     q_id = int(callback.data.split("_")[1])
     user_id = callback.from_user.id
 
@@ -110,7 +128,7 @@ async def submit_answer(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.message(F.text == "/menu")
+@router.message(Command("menu"))
 async def cmd_menu(message: Message):
     logger.debug(f"Команда /menu от {message.from_user.id}")
     menu_data = core.get_menu_data(message.from_user.id)
@@ -118,14 +136,14 @@ async def cmd_menu(message: Message):
     await message.answer(text, reply_markup=kb.get_main_menu_kb(), parse_mode="Markdown")
 
 
-@router.message(F.text == "/bot")
+@router.message(Command("bot"))
 async def cmd_bot(message: Message):
     logger.debug(f"Команда /bot от {message.from_user.id}")
     await start_new_task(message.from_user.id, message)
 
 
 @router.callback_query(F.data.startswith("play_"))
-async def send_question_callback(callback: CallbackQuery):
+async def cb_send_question(callback: CallbackQuery):
     logger.info(f"Клик на кнопку 'play' от {callback.from_user.id}")
     type_of_task = callback.data.split("_")[1]
     await start_new_task(callback.from_user.id, callback, type_of_task)

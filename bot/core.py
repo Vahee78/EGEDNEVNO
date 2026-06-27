@@ -40,6 +40,36 @@ def prepare_new_task(user_id: int, task_type: str = "def") -> dict:
     }
 
 
+def toggle_option(user_id: int, q_id: str, opt_idx: int):
+    session = active_sessions.get(user_id)
+    if not session:
+        q = engine.get_task(q_id)
+        session = active_sessions[user_id] = {"task_data": q, "selected": [], "state": "solving"}
+        logger.info(f"Попытка переключения кнопок пользователем {user_id} без активной сессии.\n"
+                    f"Сессия создана. ID задания: {q_id}")
+
+    if session.get("state") != "solving" or str(session["task_data"]["id"]) != q_id:
+        logger.warning(
+            f"Устаревший клик toggle от {user_id}. Стейт: {session.get('state')}, ID в сессии: {session['task_data']['id']}, Получен: {q_id}")
+        return {"status": "error"}
+
+    if opt_idx in session["selected"]:
+        session["selected"].remove(opt_idx)
+        logger.debug(f"Юзер {user_id} убрал вариант {opt_idx + 1}. Текущий выбор: {session['selected']}")
+    else:
+        session["selected"].append(opt_idx)
+        logger.debug(f"Юзер {user_id} выбрал вариант {opt_idx + 1}. Текущий выбор: {session['selected']}")
+
+    option_numbers = [str(i + 1) for i in range(len(session["task_data"]["options"]))]
+    print(option_numbers)
+
+    return {
+        "status": "success",
+        "option_numbers": option_numbers,
+        "selected": session["selected"]
+    }
+
+
 def process_answer_submission(user_id: int, q_id: int) -> dict:
     """
     Выполняет всю грязную работу: валидация сессии, расчет правильности,

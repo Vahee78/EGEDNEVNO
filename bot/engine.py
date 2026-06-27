@@ -26,7 +26,7 @@ def get_random_task() -> dict | None:
         return None
 
 
-def get_task(task_id) -> dict | None:
+def get_task(task_id: str | int) -> dict | None:
     """Ищет задание по ID во всех файлах папки tasks/"""
     tasks_dir = "tasks"
     target_id = str(task_id).strip()
