@@ -181,8 +181,8 @@ async def cmd_bot(message: Message):
 
 @router.callback_query(F.data == "menu")
 async def cb_menu(callback: CallbackQuery):
-    logger.debug(f"Callback 'menu' от {callback.message.from_user.id}")
-    menu_data = core.get_menu_data(callback.message.from_user.id)
+    logger.debug(f"Callback 'menu' от {callback.from_user.id}")
+    menu_data = core.get_menu_data(callback.from_user.id)
     text = data_content.render_menu_text(menu_data)
     await callback.message.answer(text, reply_markup=kb.get_main_menu_kb(), parse_mode="Markdown")
 
