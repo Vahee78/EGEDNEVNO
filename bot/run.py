@@ -2,6 +2,7 @@ import database as db
 import bot
 import notifications
 from config import BOT_TOKEN
+import my_logger
 
 import asyncio
 from aiogram import Bot, Dispatcher
@@ -12,6 +13,8 @@ dp = Dispatcher()
 
 
 async def main():
+    my_logger.init_logger()
+
     logger.info("Проверка и инициализация базы данных...")
     db.init_db()
 
