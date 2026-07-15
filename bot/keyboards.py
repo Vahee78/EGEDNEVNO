@@ -38,8 +38,9 @@ def get_question_kb(q_id: int, options: list, selected_indices: list = None):
 def get_post_answer_kb(q_id: int, user_id: int, is_correct: bool):
     builder = InlineKeyboardBuilder()
     builder.button(text="✨ Умный разбор от ИИ", callback_data=f"explain_{q_id}") if not is_correct else None
+    is_correct_flag = "1" if is_correct else "0"
     builder.button(text="🗑️ Удалить из избранного" if db.is_favourite(user_id, q_id)
-                   else "⭐ Добавить в избранное", callback_data=f"fav_{q_id}")
+                   else "⭐ Добавить в избранное", callback_data=f"fav_{q_id}_{is_correct_flag}")
     builder.button(text="➡️ Следующее задание", callback_data="play_def")
     builder.button(text="🏠 В меню", callback_data="menu")
     builder.adjust(1)
@@ -67,7 +68,7 @@ def get_after_explanation_kb(q_id, user_id: int):
     builder = InlineKeyboardBuilder()
     builder.button(text="🔄️ Попробовать снова", callback_data=f"explain_{q_id}") if q_id else None
     builder.button(text="🗑️ Удалить из избранного" if db.is_favourite(user_id, q_id)
-                   else "⭐ Добавить в избранное", callback_data=f"fav_{q_id}")
+                   else "⭐ Добавить в избранное", callback_data=f"fav_{q_id}_0")
     builder.button(text="➡️ Решать еще", callback_data="play_def")
     builder.button(text="🏠 Меню", callback_data="menu")
     builder.adjust(1)

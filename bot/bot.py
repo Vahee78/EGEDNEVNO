@@ -3,7 +3,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command, CommandStart
 
-from database import get_user_data, update_user_data
+from database import get_user_data, update_user_data, toggle_favourite
 import data_content
 import core
 import keyboards as kb
@@ -213,6 +213,29 @@ async def cb_send_question(callback: CallbackQuery):
     logger.info(f"Callback 'play' от {callback.from_user.id}")
     type_of_task = callback.data.split("_")[1]
     await start_new_task(callback.from_user.id, callback, type_of_task)
+
+
+@router.callback_query(F.data.startswith("fav_"))
+async def handle_toggle_favorite(callback: CallbackQuery):
+    user_id = callback.from_user.id
+
+    data_parts = callback.data.split("_")
+
+    question_id = int(data_parts[1])
+    is_correct = bool(int(data_parts[2]))
+
+    # Меняем статус в базе данных (если было — удалит, если не было — добавит)
+    # Функция toggle_favorite возвращает True (добавлено) или False (удалено)
+    is_added = toggle_favourite(user_id, question_id, platform="tg")
+
+    # Всплывающее уведомление сверху экрана Telegram
+    if is_added:
+        await callback.answer("⭐ Задание добавлено в избранное!")
+    else:
+        await callback.answer("🗑️ Задание удалено из избранного.")
+
+    # Обновляем клавиатуру текущего сообщения
+    await callback.message.edit_reply_markup(reply_markup=kb.get_post_answer_kb(question_id, user_id, is_correct))
 
 
 # ==========================================
